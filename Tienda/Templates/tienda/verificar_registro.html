@@ -1,0 +1,43 @@
+{% extends 'tienda/base.html' %}
+{% load static %}
+{% block title %} - Confirmar cuenta{% endblock %}
+{% block container_class %} auth-page{% endblock %}
+{% block content %}
+
+<div class="auth-wrapper">
+  <div class="auth-image">
+    <div class="auth-image-content">
+      <span class="brand-logo" aria-hidden="true">
+        <img src="{% static 'tienda/images/ampere-isotipo-blanco.png' %}" alt="" width="148" height="177">
+      </span>
+      <h2>Un paso más</h2>
+      <p>La verificación en dos pasos protege tu cuenta y confirma que el email te pertenece.</p>
+    </div>
+  </div>
+
+  <div class="auth-form">
+    <div class="auth-title">Confirmá tu cuenta</div>
+    <div class="auth-sub">Enviamos un código de 6 dígitos a {{ email_oculto }}. Vence en 10 minutos.</div>
+
+    {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="auth-field">
+        <label for="codigo">Código de verificación</label>
+        <input id="codigo" type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" autofocus required class="otp-input">
+      </div>
+      <button type="submit" class="auth-btn">Verificar y entrar</button>
+    </form>
+
+    <form method="post" class="auth-secondary-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="resend">
+      <button type="submit" class="auth-btn auth-btn-outline">Reenviar código</button>
+    </form>
+
+    <div class="auth-footer">Si el código vence, vas a poder comenzar el registro nuevamente.</div>
+  </div>
+</div>
+
+{% endblock %}

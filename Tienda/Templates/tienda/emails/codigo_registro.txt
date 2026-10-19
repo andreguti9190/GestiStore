@@ -1,0 +1,7 @@
+Hola {{ usuario.username }},
+
+Tu código para confirmar la cuenta de AmpereStore es: {{ codigo }}
+
+Vence en {{ minutos }} minutos. Si no intentaste crear esta cuenta, ignorá este mensaje.
+
+AmpereStore

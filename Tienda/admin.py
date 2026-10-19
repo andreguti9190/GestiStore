@@ -24,5 +24,8 @@ class DetalleVentaAdmin(admin.ModelAdmin):
 
 @admin.register(Perfil)
 class PerfilAdmin(admin.ModelAdmin):
-    list_display = ['usuario', 'rol']
+    list_display = [
+        'usuario', 'rol', 'fecha_nacimiento', 'terminos_version',
+        'terminos_aceptados_en', 'registro_verificado_en',
+    ]
     list_filter = ['rol']

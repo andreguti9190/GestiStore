@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -8,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import DetalleVenta, Producto, Venta
+from .models import DetalleVenta, Perfil, Producto, Venta
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -134,6 +135,82 @@ class LoginDosFactoresTests(TestCase):
 
         self.assertContains(response, 'no tiene un email registrado')
         self.assertEqual(len(mail.outbox), 0)
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class RegistroDosFactoresTests(TestCase):
+    def datos_validos(self, **cambios):
+        datos = {
+            'username': 'cliente_nuevo',
+            'email': 'nuevo@example.com',
+            'fecha_nacimiento': (timezone.localdate() - timedelta(days=365 * 25)).isoformat(),
+            'password1': 'UnaClaveSegura123!',
+            'password2': 'UnaClaveSegura123!',
+            'acepta_terminos': 'on',
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_registro_crea_cuenta_inactiva_y_envia_codigo(self):
+        response = self.client.post(reverse('registro'), self.datos_validos())
+
+        self.assertRedirects(response, reverse('verificar_registro'))
+        usuario = User.objects.get(username='cliente_nuevo')
+        self.assertFalse(usuario.is_active)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['nuevo@example.com'])
+        self.assertIn('registration_otp_code_hash', self.client.session)
+        self.assertEqual(usuario.perfil.terminos_version, '2026-10-19')
+        self.assertIsNotNone(usuario.perfil.terminos_aceptados_en)
+
+    def test_codigo_correcto_activa_cuenta_e_inicia_sesion(self):
+        self.client.post(reverse('registro'), self.datos_validos())
+        codigo = re.search(r'\b\d{6}\b', mail.outbox[0].body).group()
+
+        response = self.client.post(reverse('verificar_registro'), {'codigo': codigo})
+
+        self.assertRedirects(response, reverse('inicio'))
+        usuario = User.objects.get(username='cliente_nuevo')
+        self.assertTrue(usuario.is_active)
+        self.assertEqual(int(self.client.session['_auth_user_id']), usuario.pk)
+        self.assertIsNotNone(usuario.perfil.registro_verificado_en)
+        self.assertNotIn('registration_otp_code_hash', self.client.session)
+
+    def test_menor_de_18_no_puede_registrarse(self):
+        fecha_menor = timezone.localdate().replace(year=timezone.localdate().year - 17)
+
+        response = self.client.post(
+            reverse('registro'),
+            self.datos_validos(fecha_nacimiento=fecha_menor.isoformat()),
+        )
+
+        self.assertContains(response, 'Tenés que ser mayor de 18 años')
+        self.assertFalse(User.objects.filter(username='cliente_nuevo').exists())
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_sin_aceptar_terminos_no_puede_registrarse(self):
+        datos = self.datos_validos()
+        datos.pop('acepta_terminos')
+
+        response = self.client.post(reverse('registro'), datos)
+
+        self.assertContains(response, 'Tenés que aceptar los Términos y Condiciones')
+        self.assertFalse(User.objects.filter(username='cliente_nuevo').exists())
+
+    @patch('Tienda.views.send_registration_code', side_effect=Exception('SMTP caído'))
+    def test_falla_de_email_no_deja_cuenta_inactiva_bloqueando_datos(self, _send):
+        response = self.client.post(reverse('registro'), self.datos_validos())
+
+        self.assertContains(response, 'No pudimos enviar el código de verificación')
+        self.assertFalse(User.objects.filter(username='cliente_nuevo').exists())
+        self.assertFalse(Perfil.objects.filter(usuario__email='nuevo@example.com').exists())
+
+    def test_terminos_son_publicos(self):
+        response = self.client.get(reverse('terminos_y_condiciones'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Términos y Condiciones')
+        self.assertContains(response, 'Ley 25.326')
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')

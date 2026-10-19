@@ -17,7 +17,7 @@
 
   <div class="auth-form">
     <div class="auth-title">Registro</div>
-    <div class="auth-sub">Completá el formulario para crear tu cuenta</div>
+    <div class="auth-sub">Completá el formulario. Te enviaremos un código por email para confirmar la cuenta.</div>
 
     {% if form.errors %}
     <div class="auth-error">
@@ -40,6 +40,11 @@
         {{ form.email }}
       </div>
       <div class="auth-field">
+        <label for="{{ form.fecha_nacimiento.id_for_label }}">¿Cuándo naciste?</label>
+        {{ form.fecha_nacimiento }}
+        <div class="auth-help">Tenés que ser mayor de 18 años para registrarte.</div>
+      </div>
+      <div class="auth-field">
         <label>Contraseña</label>
         {{ form.password1 }}
         <div style="font-size:0.75rem;color:var(--amp-muted);margin-top:4px;">Mínimo 8 caracteres. No puede ser similar a tu usuario.</div>
@@ -48,7 +53,11 @@
         <label>Confirmar contraseña</label>
         {{ form.password2 }}
       </div>
-      <button type="submit" class="auth-btn">Crear cuenta</button>
+      <label class="auth-checkbox" for="{{ form.acepta_terminos.id_for_label }}">
+        {{ form.acepta_terminos }}
+        <span>Acepto los <a href="{% url 'terminos_y_condiciones' %}" target="_blank" rel="noopener">Términos y Condiciones</a>.</span>
+      </label>
+      <button type="submit" class="auth-btn">Crear cuenta y verificar email</button>
     </form>
 
     <div class="auth-footer">

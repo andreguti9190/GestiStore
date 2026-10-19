@@ -18,7 +18,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from .models import Producto, Venta, DetalleVenta, Perfil
 from .forms import LoginForm, ProductoForm, RegistroForm
-from .emails import send_login_code, send_purchase_receipt
+from .emails import send_login_code, send_purchase_receipt, send_registration_code
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,14 @@ OTP_SESSION_KEYS = (
     'otp_user_id', 'otp_code_hash', 'otp_expires_at', 'otp_attempts',
     'otp_backend', 'otp_next', 'otp_sent_at',
 )
+
+REGISTRATION_OTP_SESSION_KEYS = (
+    'registration_otp_user_id', 'registration_otp_code_hash',
+    'registration_otp_expires_at', 'registration_otp_attempts',
+    'registration_otp_sent_at',
+)
+
+TERMS_VERSION = '2026-10-19'
 
 
 class PasswordResetConBaseView(auth_views.PasswordResetView):
@@ -89,6 +97,24 @@ def _masked_email(email):
         return email
     visible = local[:2] if len(local) > 2 else local[:1]
     return f'{visible}{"*" * max(3, len(local) - len(visible))}@{domain}'
+
+
+def _clear_pending_registration_otp(request):
+    for key in REGISTRATION_OTP_SESSION_KEYS:
+        request.session.pop(key, None)
+
+
+def _issue_registration_code(request, user):
+    code = f'{secrets.randbelow(1_000_000):06d}'
+    now = timezone.now()
+    send_registration_code(user, code)
+    request.session['registration_otp_user_id'] = user.pk
+    request.session['registration_otp_code_hash'] = make_password(code)
+    request.session['registration_otp_expires_at'] = int(
+        (now + timedelta(seconds=settings.EMAIL_OTP_EXPIRY_SECONDS)).timestamp()
+    )
+    request.session['registration_otp_attempts'] = 0
+    request.session['registration_otp_sent_at'] = int(now.timestamp())
 
 
 def _issue_login_code(request, user):
@@ -214,13 +240,113 @@ def verificar_2fa(request):
 
 
 def registro(request):
+    if request.user.is_authenticated:
+        return redirect('inicio')
+
     form = RegistroForm(request.POST or None)
-    if form.is_valid():
-        usuario = form.save()
-        Perfil.objects.create(usuario=usuario, rol='operador')
-        messages.success(request, 'Cuenta creada. Ya podés iniciar sesión.')
-        return redirect('login')
+    if request.method == 'POST' and form.is_valid():
+        try:
+            with transaction.atomic():
+                usuario = form.save(commit=False)
+                usuario.is_active = False
+                usuario.save()
+                Perfil.objects.create(
+                    usuario=usuario,
+                    rol='operador',
+                    fecha_nacimiento=form.cleaned_data['fecha_nacimiento'],
+                    terminos_aceptados_en=timezone.now(),
+                    terminos_version=TERMS_VERSION,
+                )
+                _clear_pending_registration_otp(request)
+                _issue_registration_code(request, usuario)
+        except Exception:
+            logger.exception('No se pudo enviar el código de registro')
+            _clear_pending_registration_otp(request)
+            form.add_error(
+                None,
+                'No pudimos enviar el código de verificación. Intentá nuevamente en unos minutos.',
+            )
+        else:
+            return redirect('verificar_registro')
     return render(request, 'tienda/registro.html', {'form': form})
+
+
+def verificar_registro(request):
+    if request.user.is_authenticated:
+        return redirect('inicio')
+
+    user_id = request.session.get('registration_otp_user_id')
+    expires_at = request.session.get('registration_otp_expires_at', 0)
+    user = User.objects.filter(pk=user_id, is_active=False).first()
+    if not user or not request.session.get('registration_otp_code_hash'):
+        _clear_pending_registration_otp(request)
+        messages.info(request, 'Completá el registro para recibir un código de verificación.')
+        return redirect('registro')
+
+    if int(timezone.now().timestamp()) > expires_at:
+        # La cuenta nunca fue habilitada: se elimina para que la persona pueda
+        # comenzar nuevamente con el mismo usuario y email.
+        user.delete()
+        _clear_pending_registration_otp(request)
+        messages.error(request, 'El código venció. Completá el registro nuevamente.')
+        return redirect('registro')
+
+    if request.method == 'POST' and request.POST.get('action') == 'resend':
+        now = int(timezone.now().timestamp())
+        seconds_since_send = now - request.session.get('registration_otp_sent_at', 0)
+        if seconds_since_send < settings.EMAIL_OTP_RESEND_SECONDS:
+            messages.info(
+                request,
+                f'Esperá {settings.EMAIL_OTP_RESEND_SECONDS - seconds_since_send} segundos para reenviar.',
+            )
+        else:
+            try:
+                _issue_registration_code(request, user)
+            except Exception:
+                logger.exception('No se pudo reenviar el código de registro al usuario %s', user.pk)
+                messages.error(request, 'No pudimos reenviar el código. Intentá nuevamente.')
+            else:
+                messages.success(request, 'Te enviamos un código nuevo.')
+        return redirect('verificar_registro')
+
+    error = None
+    if request.method == 'POST':
+        code = request.POST.get('codigo', '').strip()
+        attempts = request.session.get('registration_otp_attempts', 0) + 1
+        request.session['registration_otp_attempts'] = attempts
+
+        if code.isdigit() and len(code) == 6 and check_password(
+            code, request.session['registration_otp_code_hash']
+        ):
+            with transaction.atomic():
+                user.is_active = True
+                user.save(update_fields=['is_active'])
+                user.perfil.registro_verificado_en = timezone.now()
+                user.perfil.save(update_fields=['registro_verificado_en'])
+            _clear_pending_registration_otp(request)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            messages.success(request, 'Tu cuenta fue verificada y ya está lista para usar.')
+            return redirect('inicio')
+
+        if attempts >= settings.EMAIL_OTP_MAX_ATTEMPTS:
+            user.delete()
+            _clear_pending_registration_otp(request)
+            messages.error(request, 'Superaste el límite de intentos. Completá el registro nuevamente.')
+            return redirect('registro')
+
+        remaining = settings.EMAIL_OTP_MAX_ATTEMPTS - attempts
+        error = f'El código no es válido. Te quedan {remaining} intentos.'
+
+    return render(request, 'tienda/verificar_registro.html', {
+        'email_oculto': _masked_email(user.email),
+        'error': error,
+    })
+
+
+def terminos_y_condiciones(request):
+    return render(request, 'tienda/terminos_y_condiciones.html', {
+        'terms_version': TERMS_VERSION,
+    })
 
 
 # ─── PRODUCTOS ────────────────────────────────────────────

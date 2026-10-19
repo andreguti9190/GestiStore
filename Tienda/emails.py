@@ -24,6 +24,16 @@ def send_login_code(user, code):
     )
 
 
+def send_registration_code(user, code):
+    return _send_templated_email(
+        subject='Confirmá tu cuenta de AmpereStore',
+        recipient=user.email,
+        text_template='tienda/emails/codigo_registro.txt',
+        html_template='tienda/emails/codigo_registro.html',
+        context={'usuario': user, 'codigo': code, 'minutos': 10},
+    )
+
+
 def send_purchase_receipt(venta):
     detalles = list(venta.detalles.select_related('producto').all())
     return _send_templated_email(

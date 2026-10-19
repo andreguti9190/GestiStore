@@ -316,6 +316,23 @@ width: 84px; height: 84px; border-radius: 22px;
 .auth-field input:focus {
 border-color: var(--amp-primary); background: var(--amp-white); box-shadow: var(--amp-ring);
 }
+.auth-help {
+  font-size: .75rem; color: var(--amp-muted); margin-top: 5px; line-height: 1.45;
+}
+.auth-checkbox {
+  display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 20px;
+  color: var(--amp-text); font-size: .84rem; line-height: 1.5; cursor: pointer;
+}
+.auth-checkbox input { margin-top: 3px; flex: 0 0 auto; }
+.auth-checkbox a { color: var(--amp-indigo); font-weight: 600; }
+.otp-input {
+  font-size: 1.35rem !important; letter-spacing: .35rem; text-align: center;
+}
+.auth-secondary-form { margin-top: 12px; }
+.auth-btn.auth-btn-outline {
+  background: transparent; color: var(--amp-primary); border: 1px solid var(--amp-primary);
+}
+.auth-btn.auth-btn-outline:hover { background: var(--amp-ice); color: var(--amp-night); }
 .auth-error {
   background: var(--amp-danger-bg); color: var(--amp-danger);
   padding: 12px 16px; border-radius: 10px;
@@ -340,6 +357,25 @@ background: var(--amp-night); transform: translateY(-1px); box-shadow: var(--amp
 color: var(--amp-indigo); font-weight: 600; text-decoration: none;
 }
 .auth-footer a:hover { text-decoration: underline; }
+
+/* ─── DOCUMENTOS LEGALES ───────────────────── */
+.legal-document {
+  max-width: 900px; margin: 36px auto 64px; padding: 44px 52px;
+  background: var(--amp-white); border: 1px solid var(--amp-border);
+  border-radius: 16px; box-shadow: var(--amp-shadow); color: var(--amp-text);
+}
+.legal-header { padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--amp-border); }
+.legal-kicker {
+  margin: 0 0 6px; color: var(--amp-primary); font-size: .78rem;
+  font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+.legal-document h1 { margin: 0 0 10px; color: var(--amp-night); font-size: 2rem; }
+.legal-document h2 { margin: 0 0 10px; color: var(--amp-night); font-size: 1.08rem; }
+.legal-document section + section { margin-top: 28px; }
+.legal-document p, .legal-document li { line-height: 1.7; }
+.legal-document p { margin: 0 0 10px; }
+.legal-document ul { padding-left: 22px; margin: 12px 0 0; }
+.footer-right a { color: var(--amp-white); font-size: .85rem; }
 
 /* ─── RESPONSIVE ───────────────────────────── */
 @media (max-width: 1024px) {
@@ -372,6 +408,8 @@ color: var(--amp-indigo); font-weight: 600; text-decoration: none;
   .brand-logo { width: 32px; height: 32px; }
   .container { padding: 0 10px; }
   .mobile-menu { top: var(--amp-header-height); }
+  .legal-document { margin: 20px auto 40px; padding: 28px 20px; }
+  .legal-document h1 { font-size: 1.55rem; }
 }
 
 /* Permitís que la tabla y demás contenido grande se scrollen horizontalmente en movil */

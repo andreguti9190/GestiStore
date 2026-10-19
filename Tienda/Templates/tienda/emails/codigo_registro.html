@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es">
+<body style="margin:0;background:#f4f6f8;font-family:Arial,sans-serif;color:#172033">
+  <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:14px;padding:32px">
+    <h1 style="margin:0 0 16px;color:#123b6d;font-size:24px">Confirmá tu cuenta</h1>
+    <p>Hola {{ usuario.username }}, usá este código para terminar de crear tu cuenta de AmpereStore:</p>
+    <div style="font-size:34px;letter-spacing:8px;font-weight:700;text-align:center;background:#eef4fa;padding:18px;border-radius:10px;color:#123b6d">{{ codigo }}</div>
+    <p style="color:#5f6b7a">El código vence en {{ minutos }} minutos y solo puede usarse una vez.</p>
+    <p style="color:#5f6b7a;font-size:13px">Si no intentaste crear esta cuenta, ignorá este email.</p>
+  </div>
+</body>
+</html>

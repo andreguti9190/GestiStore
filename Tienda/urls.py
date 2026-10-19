@@ -7,6 +7,8 @@ urlpatterns = [
 
     # Auth
     path('registro/', views.registro, name='registro'),
+    path('registro/verificar/', views.verificar_registro, name='verificar_registro'),
+    path('terminos-y-condiciones/', views.terminos_y_condiciones, name='terminos_y_condiciones'),
 
     # Productos
     path('productos/', views.lista_productos, name='lista_productos'),
