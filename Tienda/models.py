@@ -11,6 +11,10 @@ class Perfil(models.Model):
 
     usuario = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
     rol = models.CharField(max_length=10, choices=ROL_CHOICES, default='operador')
+    fecha_nacimiento = models.DateField(null=True, blank=True)
+    terminos_aceptados_en = models.DateTimeField(null=True, blank=True)
+    terminos_version = models.CharField(max_length=20, blank=True)
+    registro_verificado_en = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.usuario.username} - {self.get_rol_display()}"
