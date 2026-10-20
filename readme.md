@@ -157,6 +157,15 @@ Cables y Adaptadores, Electrónica y Desarrollo, Seguridad y Domótica, Lectores
 
 ## 🔧 Configuración
 
+Para configurar Gmail con una ventana guiada, abrí `configurar_correo.bat`.
+Ingresá el correo remitente y una contraseña de aplicación de Google. El asistente
+comprueba la autenticación SMTP sin enviar mensajes, guarda los datos en `.env`
+(ignorado por Git) y conserva las demás opciones del archivo. Luego reiniciá
+`iniciar_facil.bat`. Si faltan credenciales, el iniciador mostrará un aviso.
+
+El túnel sirve las imágenes subidas desde `media/` con `SERVE_MEDIA_FILES=true`,
+manteniendo `DEBUG=False`. Este servidor de archivos es para la demo local con túnel.
+
 Las credenciales de correo se leen desde un archivo `.env` en la raíz del proyecto (no se sube al
 repositorio). Ejemplo de contenido:
 

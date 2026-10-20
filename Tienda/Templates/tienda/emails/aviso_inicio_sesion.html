@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<body style="margin:0;padding:24px;background:#f2f7fc;font-family:Arial,sans-serif;color:#24254f">
+  <div style="max-width:560px;margin:auto;padding:28px;background:#fff;border:1px solid #d5e0ee;border-radius:16px">
+    <h1 style="font-size:22px;margin:0 0 16px">Nuevo inicio de sesión</h1>
+    <p>Hola {{ usuario.username }},</p>
+    <p>Se inició sesión en tu cuenta de AmpereStore. Estos son los datos aproximados del acceso:</p>
+    <ul style="line-height:1.8">
+      <li><strong>Fecha:</strong> {{ fecha|date:"d/m/Y H:i" }} (hora de Argentina)</li>
+      <li><strong>Dispositivo:</strong> {{ dispositivo }}</li>
+      <li><strong>Método:</strong> {{ metodo }}</li>
+      <li><strong>IP pública:</strong> {{ ip }}</li>
+      <li><strong>Ubicación aproximada:</strong> {{ ubicacion }}</li>
+    </ul>
+    {% if mapa_url %}
+    <div style="margin:22px 0;border:1px solid #d5e0ee;border-radius:14px;overflow:hidden;background:#f2f7fc">
+      {% if mapa_imagen %}
+      <a href="{{ mapa_url }}" style="display:block;text-decoration:none">
+        <img src="{{ mapa_imagen }}" width="512" alt="Mapa de la ubicación aproximada del inicio de sesión" style="display:block;width:100%;max-width:512px;height:auto;border:0">
+      </a>
+      {% endif %}
+      <div style="padding:16px 18px">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#68738a">Ubicación aproximada</div>
+        <strong style="display:block;margin:5px 0 12px;font-size:16px;color:#24254f">{{ ubicacion }}</strong>
+        <a href="{{ mapa_url }}" style="display:inline-block;padding:10px 15px;border-radius:9px;background:#465da0;color:#ffffff;text-decoration:none;font-weight:bold">Abrir mapa completo</a>
+        <div style="margin-top:10px;font-size:11px;color:#68738a">Mapa y datos © OpenStreetMap contributors</div>
+      </div>
+    </div>
+    {% else %}
+    <div style="margin:22px 0;padding:16px 18px;border:1px solid #d5e0ee;border-radius:14px;background:#f2f7fc;color:#5b6475">
+      <strong style="display:block;margin-bottom:5px;color:#24254f">Mapa no disponible para este acceso</strong>
+      No pudimos obtener coordenadas aproximadas de esta IP. El inicio de sesión igualmente quedó registrado en este aviso.
+    </div>
+    {% endif %}
+    <p style="font-size:13px;color:#5b6475">{{ ubicacion_nota }} Si no reconocés este acceso, cambiá tu contraseña y contactanos.</p>
+  </div>
+</body>
+</html>

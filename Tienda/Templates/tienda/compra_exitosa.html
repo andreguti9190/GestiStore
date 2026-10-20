@@ -17,6 +17,10 @@
   {% endif %}
 
   {% if venta %}
+  <form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-secondary">Reenviar comprobante por email</button>
+  </form>
   <div class="exito-venta">
     <div class="exito-codigo">{{ venta.codigo }}</div>
     <div class="exito-detalles">

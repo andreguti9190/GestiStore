@@ -99,6 +99,31 @@
         <input type="hidden" name="cvv" value="000">
       </div>
 
+      <div class="pago-campo" style="margin-top:22px">
+        <label>Confirmá que sos vos</label>
+        <p style="color:var(--amp-muted);font-size:.9rem;margin:4px 0 12px">Antes de acreditar la compra, verificá tu identidad con la contraseña de tu cuenta o con el rostro que registraste.</p>
+        <label class="pago-verificacion-opcion">
+          <input type="radio" name="verification_method" value="password" checked>
+          Confirmar con mi contraseña
+        </label>
+        <div id="pago-verificacion-password" class="pago-campo">
+          <label for="account-password">Contraseña de AmpereStore</label>
+          <input type="password" name="account_password" id="account-password" autocomplete="current-password">
+        </div>
+        {% if has_face_credential %}
+        <label class="pago-verificacion-opcion">
+          <input type="radio" name="verification_method" value="face">
+          Confirmar con reconocimiento facial
+        </label>
+        <button type="button" class="btn-pago" data-face-purchase data-url="{% url 'verificar_rostro_compra' %}" hidden>
+          Verificar mi rostro con la cámara
+        </button>
+        {% else %}
+        <p class="pago-verificacion-ayuda">Todavía no registraste tu rostro. Podés hacerlo desde Seguridad o confirmar con tu contraseña.</p>
+        {% endif %}
+        <div id="face-page-status" class="face-page-status" role="status" hidden></div>
+      </div>
+
       <button type="submit" class="btn-pago">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         Confirmar pago &mdash; ${{ total }}
@@ -141,6 +166,8 @@
   </div>
 </div>
 
+{% include 'tienda/_facial_modal.html' %}
+
 <script>
 function mostrarMetodo(val) {
   document.querySelectorAll('.metodo-btn').forEach(b => b.classList.remove('activo'));
@@ -165,6 +192,22 @@ function formatearVencimiento(input) {
 document.querySelector('[name=nombre_tarjeta]').addEventListener('input', function() {
   document.getElementById('prev-nombre').textContent = this.value.toUpperCase() || 'TU NOMBRE';
 });
+
+function actualizarVerificacionPago() {
+  var method = document.querySelector('input[name=verification_method]:checked');
+  var password = document.getElementById('pago-verificacion-password');
+  if (password) password.style.display = method && method.value === 'password' ? 'block' : 'none';
+}
+document.querySelectorAll('input[name=verification_method]').forEach(function (input) {
+  input.addEventListener('change', actualizarVerificacionPago);
+});
+actualizarVerificacionPago();
 </script>
 
+{% endblock %}
+{% block extra_js %}
+{% if has_face_credential %}
+<script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
+<script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-4" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>
+{% endif %}
 {% endblock %}

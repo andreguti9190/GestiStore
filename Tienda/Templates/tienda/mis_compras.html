@@ -32,6 +32,10 @@
         <span class="compra-label">Método de pago</span>
         <span>{{ venta.get_metodo_pago_display }}</span>
       </div>
+      <form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary">Reenviar comprobante por email</button>
+      </form>
       <div class="compra-productos">
         {% for d in venta.detalles.all %}
         <div class="compra-producto">
