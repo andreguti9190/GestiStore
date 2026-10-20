@@ -1,0 +1,83 @@
+{% extends 'tienda/base.html' %}
+{% load static %}
+{% block title %} - Seguridad{% endblock %}
+{% block content %}
+
+<div class="security-page">
+  <header class="security-header">
+    <p class="legal-kicker">Cuenta</p>
+    <h1>Seguridad e inicio de sesión</h1>
+    <p>Activá el reconocimiento facial con la cámara de tu celular o computadora. Es opcional y siempre podés seguir ingresando con contraseña.</p>
+  </header>
+
+  <section class="security-card">
+    <div class="security-card-heading">
+      <div>
+        <h2>Reconocimiento facial</h2>
+        <p>No necesitás Face ID, huella ni instalar una aplicación. La cámara toma tres lecturas y AmpereStore guarda solamente una representación numérica, no tus fotos ni el video.</p>
+      </div>
+      <span class="security-badge">Beta · Opcional</span>
+    </div>
+
+    {% if credencial_facial %}
+    <div class="face-registration-state">
+      <span class="face-registration-icon" aria-hidden="true">✓</span>
+      <div>
+        <strong>Tu rostro está registrado</strong>
+        <span>Actualizado el {{ credencial_facial.actualizada_en|date:"d/m/Y H:i" }}{% if credencial_facial.ultimo_uso %} · Último acceso {{ credencial_facial.ultimo_uso|date:"d/m/Y H:i" }}{% endif %}</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <label class="face-consent">
+      <input type="checkbox" id="face-consent">
+      <span>Acepto voluntariamente registrar mi representación facial para iniciar sesión. Puedo eliminarla cuando quiera.</span>
+    </label>
+
+    <div class="face-actions">
+      <button type="button" class="btn btn-primary" data-face-enroll data-url="{% url 'registrar_rostro' %}" hidden>
+        {% if credencial_facial %}Actualizar mi rostro{% else %}Registrar mi rostro{% endif %}
+      </button>
+      {% if credencial_facial %}
+      <form method="post" action="{% url 'eliminar_rostro' %}" onsubmit="return confirm('¿Eliminar el reconocimiento facial de tu cuenta?');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Eliminar reconocimiento facial</button>
+      </form>
+      {% endif %}
+    </div>
+    <div id="face-page-status" class="face-page-status" role="status" hidden></div>
+
+    <div class="secure-context-note">
+      La cámara se abre solamente cuando tocás el botón y el navegador te pide permiso. Si el dispositivo no tiene cámara o rechazás el permiso, podés continuar usando contraseña y código por email.
+    </div>
+  </section>
+
+  {% if credenciales %}
+  <details class="security-card security-advanced">
+    <summary>Método anterior del dispositivo</summary>
+    <p class="security-advanced-copy">Estas passkeys siguen funcionando. Podés conservarlas o eliminarlas; ya no hacen falta para usar la cámara.</p>
+    <div class="passkey-list">
+      {% for credencial in credenciales %}
+      <div class="passkey-item">
+        <div>
+          <strong>{{ credencial.nombre }}</strong>
+          <span>Registrada el {{ credencial.creada_en|date:"d/m/Y H:i" }}</span>
+        </div>
+        <form method="post" action="{% url 'eliminar_passkey' credencial.pk %}" onsubmit="return confirm('¿Eliminar esta passkey?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger">Eliminar</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>
+
+{% include 'tienda/_facial_modal.html' %}
+
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
+<script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-3" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>
+{% endblock %}

@@ -1,0 +1,22 @@
+<div class="face-modal" data-face-modal hidden>
+  <div class="face-modal-backdrop" data-face-cancel></div>
+  <section class="face-dialog" role="dialog" aria-modal="true" aria-labelledby="face-dialog-title">
+    <button type="button" class="face-dialog-close" data-face-cancel aria-label="Cerrar">×</button>
+    <div class="face-dialog-copy">
+      <p class="legal-kicker">Cámara</p>
+      <h2 id="face-dialog-title">Mirá al frente</h2>
+      <p>Ubicá tu cara dentro del óvalo y mantené el dispositivo quieto.</p>
+    </div>
+    <div class="face-camera">
+      <video data-face-video autoplay muted playsinline></video>
+      <div class="face-guide" aria-hidden="true"></div>
+      <div class="face-camera-placeholder" data-face-placeholder>
+        <span class="face-spinner" aria-hidden="true"></span>
+        <span>Preparando la cámara…</span>
+      </div>
+    </div>
+    <div class="face-progress" aria-hidden="true"><span data-face-progress></span></div>
+    <p class="face-modal-status" data-face-modal-status role="status">Esperando permiso para usar la cámara…</p>
+    <button type="button" class="btn btn-secondary face-cancel-button" data-face-cancel>Cancelar</button>
+  </section>
+</div>
