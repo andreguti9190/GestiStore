@@ -117,6 +117,9 @@ class LoginDosFactoresTests(TestCase):
         self.assertRedirects(response, reverse('inicio'))
         self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
         self.assertNotIn('otp_code_hash', self.client.session)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn('Nuevo inicio de sesión', mail.outbox[-1].subject)
+        self.assertEqual(mail.outbox[-1].to, [self.user.email])
 
     def test_codigo_incorrecto_no_inicia_sesion(self):
         self.iniciar_primer_factor()
@@ -150,6 +153,23 @@ class LoginDosFactoresTests(TestCase):
         response = self.client.get(reverse('login'))
 
         self.assertIn('no-cache', response.headers['Cache-Control'])
+
+    def test_encabezado_de_login_muestra_solamente_la_marca(self):
+        response = self.client.get(reverse('login'))
+
+        self.assertContains(response, 'class="header-brand"')
+        self.assertNotContains(response, 'class="nav-links"')
+        self.assertNotContains(response, 'class="header-right"')
+        self.assertNotContains(response, 'id="mobile-menu"')
+
+    def test_registro_y_recuperacion_tambien_muestran_solamente_la_marca(self):
+        for url_name in ('registro', 'password_reset'):
+            with self.subTest(url_name=url_name):
+                response = self.client.get(reverse(url_name))
+                self.assertContains(response, 'class="header-brand"')
+                self.assertNotContains(response, 'class="nav-links"')
+                self.assertNotContains(response, 'class="header-right"')
+                self.assertNotContains(response, 'id="mobile-menu"')
 
     def test_token_csrf_vencido_recupera_la_pantalla_de_codigo(self):
         client = Client(enforce_csrf_checks=True)
@@ -298,6 +318,7 @@ class RegistroDosFactoresTests(TestCase):
         self.assertContains(response, 'Ley 25.326')
 
 
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class PasskeyTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -410,6 +431,7 @@ class PasskeyTests(TestCase):
         self.assertFalse(CredencialPasskey.objects.filter(pk=saved.pk).exists())
 
 
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class ReconocimientoFacialTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -665,6 +687,8 @@ class ComprobanteCompraTests(TestCase):
     def test_compra_envia_comprobante_con_detalle(self):
         response = self.client.post(reverse('procesar_pago'), {
             'metodo_pago': 'transferencia',
+            'verification_method': 'password',
+            'account_password': 'UnaClaveSegura123!',
         })
 
         self.assertRedirects(response, reverse('compra_exitosa'))
@@ -681,6 +705,8 @@ class ComprobanteCompraTests(TestCase):
     def test_falla_de_email_no_anula_la_compra(self, _send):
         response = self.client.post(reverse('procesar_pago'), {
             'metodo_pago': 'transferencia',
+            'verification_method': 'password',
+            'account_password': 'UnaClaveSegura123!',
         })
 
         self.assertEqual(self.client.session['comprobante_enviado'], False)

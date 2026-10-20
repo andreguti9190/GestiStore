@@ -1,0 +1,12 @@
+Hola {{ usuario.username }},
+
+Se inició sesión en tu cuenta de AmpereStore.
+
+Fecha: {{ fecha|date:"d/m/Y H:i" }} (hora de Argentina)
+Dispositivo: {{ dispositivo }}
+Método: {{ metodo }}
+IP pública: {{ ip }}
+Ubicación aproximada: {{ ubicacion }}
+{% if mapa_url %}Mapa aproximado: {{ mapa_url }}{% endif %}
+
+{{ ubicacion_nota }} Si no reconocés este acceso, cambiá tu contraseña y contactanos.

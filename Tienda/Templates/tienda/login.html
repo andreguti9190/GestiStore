@@ -66,6 +66,7 @@
   var form = document.getElementById('login-form');
   var button = document.getElementById('login-submit');
   if (!form || !button) return;
+
   form.addEventListener('submit', function(event) {
     if (form.dataset.submitting === 'true') {
       event.preventDefault();
@@ -81,5 +82,5 @@
 {% endblock %}
 {% block extra_js %}
 <script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
-<script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-3" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>
+<script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261020-5" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>
 {% endblock %}

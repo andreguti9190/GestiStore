@@ -33,10 +33,12 @@ urlpatterns = [
     path('carrito/eliminar/<str:key>/', views.eliminar_carrito, name='eliminar_carrito'),
     path('carrito/confirmar/', views.confirmar_compra, name='confirmar_compra'),
     path('carrito/procesar/', views.procesar_pago, name='procesar_pago'),
+    path('carrito/verificar-rostro/', views.verificar_rostro_compra, name='verificar_rostro_compra'),
     path('carrito/exitoso/', views.compra_exitosa, name='compra_exitosa'),
 
     # Mis compras
     path('mis-compras/', views.mis_compras, name='mis_compras'),
+    path('mis-compras/<int:pk>/comprobante/', views.reenviar_comprobante, name='reenviar_comprobante'),
 
     # Historial de ventas (admin)
     path('ventas/', views.historial_ventas, name='historial_ventas'),

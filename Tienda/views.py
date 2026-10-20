@@ -2,6 +2,7 @@ import logging
 import json
 import math
 import secrets
+import hashlib
 from datetime import timedelta
 
 from django.conf import settings
@@ -40,7 +41,12 @@ from webauthn.helpers.structs import (
 
 from .models import CredencialFacial, CredencialPasskey, Producto, Venta, DetalleVenta, Perfil
 from .forms import LoginForm, ProductoForm, RegistroForm
-from .emails import send_login_code, send_purchase_receipt, send_registration_code
+from .emails import (
+    send_login_code,
+    send_login_notification,
+    send_purchase_receipt,
+    send_registration_code,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -303,6 +309,33 @@ def _issue_login_code(request, user):
     request.session['otp_sent_at'] = int(now.timestamp())
 
 
+def _send_login_notice_safely(request, user, method):
+    try:
+        if not send_login_notification(request, user, method):
+            raise RuntimeError('No se pudo enviar el aviso de acceso.')
+    except Exception:
+        logger.exception('No se pudo enviar el aviso de inicio de sesión al usuario %s', user.pk)
+        messages.warning(request, 'Ingresaste correctamente, pero no pudimos enviar el aviso de acceso por email.')
+
+
+def _cart_fingerprint(cart):
+    normalized = sorted(
+        (str(item.get('producto_id', key)), int(item.get('cantidad', 0)))
+        for key, item in cart.items()
+    )
+    return hashlib.sha256(json.dumps(normalized).encode('utf-8')).hexdigest()
+
+
+def _valid_purchase_face_proof(request, cart):
+    proof = request.session.get('purchase_face_auth') or {}
+    return (
+        proof.get('user_id') == request.user.pk
+        and proof.get('cart') == _cart_fingerprint(cart)
+        and isinstance(proof.get('expires'), int)
+        and proof['expires'] >= int(timezone.now().timestamp())
+    )
+
+
 def _has_recent_login_code(request, user):
     now = int(timezone.now().timestamp())
     sent_at = request.session.get('otp_sent_at', 0)
@@ -401,6 +434,7 @@ def verificar_2fa(request):
             next_url = request.session.get('otp_next', reverse('inicio'))
             _clear_pending_otp(request)
             login(request, user, backend=backend)
+            _send_login_notice_safely(request, user, 'Contraseña y código por email')
             messages.success(request, 'Inicio de sesión confirmado.')
             return redirect(next_url)
 
@@ -556,6 +590,7 @@ def verificar_registro(request):
                 user.perfil.save(update_fields=['registro_verificado_en'])
             _clear_pending_registration_otp(request)
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            _send_login_notice_safely(request, user, 'Verificación de cuenta por email')
             messages.success(request, 'Tu cuenta fue verificada y ya está lista para usar.')
             return redirect('inicio')
 
@@ -699,6 +734,7 @@ def login_facial(request):
     saved.ultimo_uso = timezone.now()
     saved.save(update_fields=['ultimo_uso'])
     login(request, saved.usuario, backend='django.contrib.auth.backends.ModelBackend')
+    _send_login_notice_safely(request, saved.usuario, 'Reconocimiento facial')
     return JsonResponse({'ok': True, 'redirect': next_url})
 
 
@@ -849,6 +885,7 @@ def passkey_login_verificar(request):
     saved.ultimo_uso = timezone.now()
     saved.save(update_fields=['sign_count', 'device_type', 'backed_up', 'ultimo_uso'])
     login(request, saved.usuario, backend='django.contrib.auth.backends.ModelBackend')
+    _send_login_notice_safely(request, saved.usuario, 'Face ID o passkey')
     return JsonResponse({'ok': True, 'redirect': next_url})
 
 
@@ -1001,6 +1038,7 @@ def confirmar_compra(request):
     if not carrito:
         messages.error(request, 'Tu carrito está vacío.')
         return redirect('lista_productos')
+    request.session.pop('purchase_face_auth', None)
 
     items = []
     total = 0
@@ -1009,7 +1047,59 @@ def confirmar_compra(request):
         total += subtotal
         items.append({**item, 'subtotal': subtotal, 'key': key})
 
-    return render(request, 'tienda/pago.html', {'items': items, 'total': total})
+    return render(request, 'tienda/pago.html', {
+        'items': items,
+        'total': total,
+        'has_face_credential': CredencialFacial.objects.filter(usuario=request.user).exists(),
+    })
+
+
+@login_required
+@require_POST
+def verificar_rostro_compra(request):
+    carrito = request.session.get('carrito', {})
+    if not carrito:
+        return JsonResponse({'error': 'Tu carrito está vacío.'}, status=400)
+    if _face_login_rate_limited(request):
+        return JsonResponse({
+            'error': 'Demasiados intentos. Esperá cinco minutos e intentá nuevamente.'
+        }, status=429)
+
+    payload = _json_body(request) or {}
+    try:
+        _centroid, captures = _preparar_descriptores_faciales(payload.get('descriptors'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'No pudimos leer el rostro. Intentá nuevamente.'}, status=400)
+    if not _capturas_faciales_consistentes(captures):
+        _record_face_login_failure(request)
+        return JsonResponse({
+            'error': 'Las lecturas del rostro no fueron consistentes. Mirá al frente e intentá nuevamente.'
+        }, status=400)
+
+    saved = CredencialFacial.objects.filter(usuario=request.user).first()
+    if not saved:
+        return JsonResponse({
+            'error': 'No hay un rostro registrado para esta cuenta. Elegí confirmar con tu contraseña.'
+        }, status=400)
+    if saved.modelo != settings.FACE_RECOGNITION_MODEL_VERSION:
+        return JsonResponse({
+            'error': 'Actualizá tu rostro desde Seguridad antes de usarlo para confirmar compras.'
+        }, status=400)
+    distances = [_distancia_facial(saved.descriptor, capture) for capture in captures]
+    if any(distance > settings.FACE_RECOGNITION_THRESHOLD for distance in distances):
+        _record_face_login_failure(request)
+        return JsonResponse({'error': 'El rostro no coincide con esta cuenta.'}, status=400)
+
+    request.session.pop('face_login_failures', None)
+    request.session['purchase_face_auth'] = {
+        'user_id': request.user.pk,
+        'cart': _cart_fingerprint(carrito),
+        'expires': int(timezone.now().timestamp()) + settings.PURCHASE_FACE_AUTH_SECONDS,
+    }
+    return JsonResponse({
+        'ok': True,
+        'message': 'Rostro confirmado. Ahora podés confirmar la compra.',
+    })
 
 
 @login_required
@@ -1022,6 +1112,21 @@ def procesar_pago(request):
     carrito = request.session.get('carrito', {})
     if not carrito:
         return redirect('lista_productos')
+
+    verification_method = request.POST.get('verification_method', '')
+    if verification_method == 'password':
+        account_password = request.POST.get('account_password', '')
+        if not account_password or not request.user.check_password(account_password):
+            messages.error(request, 'La contraseña de tu cuenta no es correcta.')
+            return redirect('confirmar_compra')
+    elif verification_method == 'face':
+        if not _valid_purchase_face_proof(request, carrito):
+            request.session.pop('purchase_face_auth', None)
+            messages.error(request, 'Verificá tu rostro nuevamente para confirmar esta compra.')
+            return redirect('confirmar_compra')
+    else:
+        messages.error(request, 'Elegí cómo querés confirmar tu identidad.')
+        return redirect('confirmar_compra')
 
     metodo = request.POST.get('metodo_pago', 'tarjeta')
 
@@ -1078,6 +1183,7 @@ def procesar_pago(request):
             producto.save(update_fields=['stock'])
 
     request.session['carrito'] = {}
+    request.session.pop('purchase_face_auth', None)
     request.session['ultima_compra'] = venta.codigo
 
     receipt_sent = False
@@ -1094,7 +1200,7 @@ def procesar_pago(request):
 @login_required
 def compra_exitosa(request):
     codigo = request.session.get('ultima_compra', '')
-    venta = Venta.objects.filter(codigo=codigo).select_related('usuario').first()
+    venta = Venta.objects.filter(codigo=codigo, usuario=request.user).select_related('usuario').first()
     detalles = venta.detalles.select_related('producto').all() if venta else []
     return render(request, 'tienda/compra_exitosa.html', {
         'venta': venta,
@@ -1104,6 +1210,33 @@ def compra_exitosa(request):
 
 
 # ─── MIS COMPRAS ──────────────────────────────────────────
+@login_required
+@require_POST
+def reenviar_comprobante(request, pk):
+    venta = get_object_or_404(
+        Venta.objects.select_related('usuario'), pk=pk,
+        usuario=request.user, estado='completada',
+    )
+    now = int(timezone.now().timestamp())
+    last_sent = request.session.get('receipt_last_sent_at', 0)
+    if now - last_sent < 60:
+        messages.info(request, 'Esperá un minuto antes de pedir otro comprobante.')
+        return redirect('mis_compras')
+    if not request.user.email:
+        messages.error(request, 'Tu cuenta no tiene un correo registrado. Contactá al administrador.')
+        return redirect('mis_compras')
+    try:
+        if not send_purchase_receipt(venta):
+            raise RuntimeError('No se pudo enviar el comprobante.')
+    except Exception:
+        logger.exception('No se pudo reenviar el comprobante de la venta %s', venta.codigo)
+        messages.error(request, 'No pudimos enviar el comprobante. Contactá al administrador para revisar el correo de la tienda.')
+    else:
+        request.session['receipt_last_sent_at'] = now
+        messages.success(request, f'Comprobante enviado a {request.user.email}. Revisá también Spam.')
+    return redirect('mis_compras')
+
+
 @login_required
 def mis_compras(request):
     if es_admin(request.user):

@@ -127,6 +127,7 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'Tienda', 'static')]
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+SERVE_MEDIA_FILES = os.getenv('SERVE_MEDIA_FILES', '').lower() == 'true'
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
@@ -167,6 +168,10 @@ FACE_RECOGNITION_THRESHOLD = float(os.getenv('FACE_RECOGNITION_THRESHOLD', '0.42
 FACE_CAPTURE_CONSISTENCY_THRESHOLD = 0.35
 FACE_LOGIN_MAX_ATTEMPTS = 5
 FACE_LOGIN_ATTEMPT_WINDOW_SECONDS = 300
+PURCHASE_FACE_AUTH_SECONDS = 180
+IP_GEOLOCATION_URL_TEMPLATE = os.getenv(
+    'IP_GEOLOCATION_URL_TEMPLATE', 'https://ipapi.co/{ip}/json/'
+)
 
 # Los enlaces de recuperación de contraseña vencen después de una hora.
 PASSWORD_RESET_TIMEOUT = 3600

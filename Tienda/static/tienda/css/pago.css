@@ -60,6 +60,13 @@ border-color: var(--amp-primary); box-shadow: var(--amp-ring);
 }
 .pago-campo input::placeholder { color: var(--amp-muted); }
 
+.pago-verificacion-opcion {
+  display: flex; align-items: center; gap: 9px; margin: 12px 0;
+  color: var(--amp-night); font-size: 0.9rem; font-weight: 600; cursor: pointer;
+}
+.pago-verificacion-opcion input { width: auto; accent-color: var(--amp-indigo); }
+.pago-verificacion-ayuda { color: var(--amp-muted); font-size: 0.86rem; }
+
 .pago-fila {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
 }

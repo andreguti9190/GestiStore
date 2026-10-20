@@ -169,6 +169,7 @@ def _configure_django(public_url):
     os.environ["DJANGO_DEBUG"] = "false"
     os.environ["DJANGO_SECURE_COOKIES"] = "true"
     os.environ["SERVE_STATIC_FILES"] = "true"
+    os.environ["SERVE_MEDIA_FILES"] = "true"
 
 
 def _stop_process(process):
@@ -196,6 +197,13 @@ def main():
     print("Creando el acceso seguro para PC y celular…")
     tunnel, public_url = _start_tunnel(local_port)
     _configure_django(public_url)
+
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'GestiStore.settings')
+    from Tienda.emails import mail_configuration_problem
+    email_problem = mail_configuration_problem()
+    if email_problem:
+        print(f'\nAVISO DE CORREO: {email_problem}')
+        print('Abrí configurar_correo.bat y luego reiniciá AmpereStore.\n')
 
     print("\n" + "=" * 68)
     print("AMPERESTORE ESTÁ LISTO")

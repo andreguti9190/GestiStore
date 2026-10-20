@@ -11,13 +11,14 @@
   var pageStatus = document.getElementById('face-page-status');
   var loginButton = document.querySelector('[data-face-login]');
   var enrollButton = document.querySelector('[data-face-enroll]');
+  var purchaseButton = document.querySelector('[data-face-purchase]');
   var stream = null;
   var cancelled = false;
   var modelsPromise = null;
   var enginePromise = null;
   var busy = false;
 
-  if (!modal || (!loginButton && !enrollButton)) return;
+  if (!modal || (!loginButton && !enrollButton && !purchaseButton)) return;
 
   function csrfToken() {
     var match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
@@ -282,6 +283,13 @@
       closeModal();
       if (kind === 'login') {
         window.location.assign(result.redirect || '/');
+      } else if (kind === 'purchase') {
+        var faceMethod = document.querySelector('input[name="verification_method"][value="face"]');
+        if (faceMethod) {
+          faceMethod.checked = true;
+          faceMethod.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        showPageStatus(result.message || 'Rostro confirmado. Ahora podés confirmar la compra.', false);
       } else {
         showPageStatus(result.message || 'Tu rostro quedó registrado.', false);
         window.setTimeout(function () { window.location.reload(); }, 900);
@@ -313,5 +321,11 @@
   if (enrollButton) {
     enrollButton.hidden = false;
     enrollButton.addEventListener('click', function () { runFaceFlow('enroll', enrollButton); });
+  }
+  if (purchaseButton) {
+    purchaseButton.hidden = false;
+    purchaseButton.addEventListener('click', function () {
+      runFaceFlow('purchase', purchaseButton);
+    });
   }
 })();
