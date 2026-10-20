@@ -3,9 +3,8 @@ param(
     [ValidateRange(1, 65535)]
     [int]$HttpsPort,
 
-    [Parameter(Mandatory = $true)]
     [ValidateRange(1, 65535)]
-    [int]$CertificatePort
+    [int]$CertificatePort = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +15,18 @@ if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Adm
     throw "La configuración del firewall requiere permisos de administrador."
 }
 
-$ruleName = "AmpereStore.Local.$HttpsPort.$CertificatePort"
+$localPorts = @($HttpsPort)
+$displayName = "AmpereStore (red local: $HttpsPort)"
+$ruleName = "AmpereStore.Local.$HttpsPort"
+$description = "Permite HTTPS de AmpereStore solamente desde la subred local."
+
+if ($CertificatePort -gt 0) {
+    $localPorts += $CertificatePort
+    $displayName = "AmpereStore (red local: $HttpsPort, $CertificatePort)"
+    $ruleName = "AmpereStore.Local.$HttpsPort.$CertificatePort"
+    $description = "Permite HTTPS de AmpereStore y la instalación de su certificado solamente desde la subred local."
+}
+
 $existingRule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
 if ($existingRule) {
     Remove-NetFirewallRule -Name $ruleName
@@ -24,12 +34,12 @@ if ($existingRule) {
 
 New-NetFirewallRule `
     -Name $ruleName `
-    -DisplayName "AmpereStore (red local: $HttpsPort, $CertificatePort)" `
-    -Description "Permite HTTPS de AmpereStore y la instalación de su certificado solamente desde la subred local." `
+    -DisplayName $displayName `
+    -Description $description `
     -Direction Inbound `
     -Action Allow `
     -Protocol TCP `
-    -LocalPort $HttpsPort, $CertificatePort `
+    -LocalPort $localPorts `
     -RemoteAddress LocalSubnet `
     -Profile Any `
     -EdgeTraversalPolicy Block | Out-Null

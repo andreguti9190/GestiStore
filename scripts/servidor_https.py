@@ -20,23 +20,32 @@ def main():
     parser.add_argument('--port', required=True, type=int)
     parser.add_argument('--certificate', required=True)
     parser.add_argument('--key', required=True)
-    parser.add_argument('--ca-certificate', required=True)
-    parser.add_argument('--certificate-port', required=True, type=int)
-    parser.add_argument('--https-url', required=True)
+    parser.add_argument('--ca-certificate')
+    parser.add_argument('--certificate-port', type=int)
+    parser.add_argument('--https-url')
     args = parser.parse_args()
 
-    certificate_server = create_certificate_server(
-        args.host,
-        args.certificate_port,
-        args.ca_certificate,
-        args.https_url,
-    )
-    certificate_thread = threading.Thread(
-        target=certificate_server.serve_forever,
-        name='amperestore-certificate-server',
-        daemon=True,
-    )
-    certificate_thread.start()
+    certificate_server = None
+    certificate_thread = None
+    if args.certificate_port:
+        if not args.ca_certificate or not args.https_url:
+            raise SystemExit(
+                'Con --certificate-port hacen falta --ca-certificate y --https-url.'
+            )
+        certificate_server = create_certificate_server(
+            args.host,
+            args.certificate_port,
+            args.ca_certificate,
+            args.https_url,
+        )
+        certificate_thread = threading.Thread(
+            target=certificate_server.serve_forever,
+            name='amperestore-certificate-server',
+            daemon=True,
+        )
+        certificate_thread.start()
+    elif args.ca_certificate or args.https_url:
+        raise SystemExit('--certificate-port es obligatorio para instalar la CA.')
 
     config = uvicorn.Config(
         'GestiStore.asgi:application',
@@ -57,9 +66,11 @@ def main():
         else:
             server.run()
     finally:
-        certificate_server.shutdown()
-        certificate_server.server_close()
-        certificate_thread.join(timeout=2)
+        if certificate_server is not None:
+            certificate_server.shutdown()
+            certificate_server.server_close()
+        if certificate_thread is not None:
+            certificate_thread.join(timeout=2)
 
 
 if __name__ == '__main__':

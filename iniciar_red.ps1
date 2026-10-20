@@ -7,11 +7,7 @@ param(
     [int]$Port = 8000,
 
     [Parameter(Position = 2)]
-    [string]$Domain = "",
-
-    [Parameter(Position = 3)]
-    [ValidateRange(1, 65535)]
-    [int]$CertificatePort = 8001
+    [string]$Domain = ""
 )
 
 function Get-ActiveIPv4Address {
@@ -83,10 +79,6 @@ if (
 
 Set-Location -LiteralPath $PSScriptRoot
 
-if ($CertificatePort -eq $Port) {
-    throw "El puerto HTTPS y el puerto para instalar el certificado deben ser distintos."
-}
-
 if ([string]::IsNullOrWhiteSpace($Domain)) {
     $Domain = ($Ip -replace '\.', '-') + ".sslip.io"
 }
@@ -121,7 +113,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "No se pudo generar el certificado HTTPS."
 }
 
-$firewallRuleName = "AmpereStore.Local.$Port.$CertificatePort"
+$firewallRuleName = "AmpereStore.Local.$Port"
 $firewallRuleReady = $false
 try {
     $firewallRule = Get-NetFirewallRule -Name $firewallRuleName -ErrorAction Stop
@@ -136,7 +128,7 @@ if (-not $firewallRuleReady) {
     Write-Host "Windows necesita habilitar AmpereStore para los demás equipos de esta red local." -ForegroundColor Yellow
     Write-Host "Se abrirá una confirmación de administrador. La regla quedará limitada a tu subred." -ForegroundColor Yellow
     $firewallScript = Join-Path $PSScriptRoot "scripts\configurar_firewall.ps1"
-    $firewallArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$firewallScript`" -HttpsPort $Port -CertificatePort $CertificatePort"
+    $firewallArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$firewallScript`" -HttpsPort $Port"
     try {
         $firewallProcess = Start-Process `
             -FilePath "powershell.exe" `
@@ -152,56 +144,25 @@ if (-not $firewallRuleReady) {
     }
 }
 
-# La CA se instala solamente con autorización explícita y únicamente para el
-# usuario actual. Esto evita requerir permisos de administrador.
-$caCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($caCertificatePath)
-$rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-)
-$rootStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-try {
-    $alreadyTrusted = $rootStore.Certificates.Find(
-        [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-        $caCertificate.Thumbprint,
-        $false
-    ).Count -gt 0
-
-    if (-not $alreadyTrusted) {
-        Write-Host ""
-        Write-Host "Para que Windows confíe en HTTPS y habilite las passkeys, hay que confiar en la CA local de AmpereStore." -ForegroundColor Yellow
-        $answer = Read-Host "¿Instalarla para tu usuario de Windows? (S/N)"
-        if ($answer -match '^[sS]$') {
-            $rootStore.Add($caCertificate)
-            $alreadyTrusted = $true
-            Write-Host "Certificado local instalado para el usuario actual." -ForegroundColor Green
-        }
-    }
-}
-finally {
-    $rootStore.Close()
-}
-
 # Estas variables existen solamente mientras se ejecuta este servidor.
 $env:DJANGO_ALLOWED_HOSTS = "localhost,127.0.0.1,testserver,$Ip,$Domain"
 $env:PUBLIC_BASE_URL = "https://${Domain}:$Port"
 $env:WEBAUTHN_RP_ID = $Domain
 $env:WEBAUTHN_ORIGIN = $env:PUBLIC_BASE_URL
-$certificateInstallUrl = "http://${Ip}:$CertificatePort/"
 
 Write-Host ""
 Write-Host "AmpereStore disponible en: $env:PUBLIC_BASE_URL" -ForegroundColor Green
 Write-Host "No uses la dirección IP directa para Face ID: WebAuthn requiere este dominio." -ForegroundColor Cyan
 Write-Host "Los enlaces enviados por email usarán esa misma dirección."
 Write-Host ""
-Write-Host "En el celular u otra computadora, abrí primero:" -ForegroundColor Cyan
-Write-Host $certificateInstallUrl -ForegroundColor Green
-Write-Host "Esa página instala el certificado y después abre AmpereStore con HTTPS."
-if (-not $alreadyTrusted) {
-    Write-Host "Windows todavía no confía en la CA local; el navegador mostrará una advertencia." -ForegroundColor Yellow
-}
-Write-Host "Para usar Face ID desde otro dispositivo, importá y marcá como confiable:" -ForegroundColor Cyan
+Write-Host "En el celular u otra computadora, abrí ese mismo enlace:" -ForegroundColor Cyan
+Write-Host $env:PUBLIC_BASE_URL -ForegroundColor Green
+Write-Host "No hay que instalar ni descargar ningún certificado."
+Write-Host "El navegador va a avisar que el certificado no es de una autoridad conocida:" -ForegroundColor Yellow
+Write-Host "elegí Avanzado → Continuar a (o Proceed) para entrar." -ForegroundColor Yellow
+Write-Host "Para eliminar ese aviso, dale confianza al certificado generado en:" -ForegroundColor Cyan
 Write-Host $caCertificatePath
+Write-Host "También se puede descargar desde la tienda en /certificado-local/ (opcional)."
 Write-Host "Para detener el servidor presioná Ctrl+C."
 Write-Host ""
 
@@ -209,7 +170,4 @@ python scripts/servidor_https.py `
     --host 0.0.0.0 `
     --port $Port `
     --certificate $serverCertificatePath `
-    --key $serverKeyPath `
-    --ca-certificate $caCertificatePath `
-    --certificate-port $CertificatePort `
-    --https-url $env:PUBLIC_BASE_URL
+    --key $serverKeyPath

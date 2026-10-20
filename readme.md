@@ -36,9 +36,11 @@ También se puede iniciar desde una terminal:
 
 ### Modo avanzado: solamente red local
 
-`iniciar_red.ps1` conserva el modo HTTPS local. Este modo requiere instalar la autoridad
-certificadora en cada dispositivo y está pensado para pruebas sin publicar la aplicación en
-Internet.
+`iniciar_red.ps1` conserva el modo HTTPS local. No hace falta instalar ningún certificado: el
+navegador mostrará una advertencia de certificado no reconocido y basta con elegir
+**Avanzado → Continuar** para entrar. La autoridad certificadora se sigue generando como archivo
+opcional (`.certificados/amperestore-ca.cer`) por si querés eliminar ese aviso, y también se puede
+descargar desde `/certificado-local/`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\iniciar_red.ps1
