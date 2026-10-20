@@ -39,6 +39,7 @@
         <a href="{% url 'mis_compras' %}" class="user-btn user-btn-secondary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 13l4-4 4 4 4-6"/></svg> Mis Compras</a>
         <a href="{% url 'ver_carrito' %}" class="user-btn user-btn-secondary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg> Carrito</a>
         {% endif %}
+        <a href="{% url 'seguridad_cuenta' %}" class="user-btn user-btn-secondary">Seguridad</a>
         <span class="user-name"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> {{ user.username }}</span>
         <form method="post" action="{% url 'logout' %}" class="inline-form">
         {% csrf_token %}
@@ -71,6 +72,7 @@
     <a href="{% url 'mis_compras' %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 13l4-4 4 4 4-6"/></svg> Mis Compras</a>
     <a href="{% url 'ver_carrito' %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg> Carrito</a>
     {% endif %}
+    <a href="{% url 'seguridad_cuenta' %}">Seguridad</a>
     <form method="post" action="{% url 'logout' %}" class="mobile-menu-logout">
       {% csrf_token %}
       <button type="submit" class="user-btn user-btn-logout"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Cerrar sesión</button>
@@ -148,5 +150,6 @@
   </div>
 </footer>
 
+{% block extra_js %}{% endblock %}
 </body>
 </html>

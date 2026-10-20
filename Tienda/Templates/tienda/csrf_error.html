@@ -1,0 +1,12 @@
+{% extends 'tienda/base.html' %}
+{% block title %} - Página vencida{% endblock %}
+{% block content %}
+
+<div class="error-403">
+  <p class="legal-kicker">Seguridad</p>
+  <h1>Esta página había vencido</h1>
+  <p>No procesamos la operación para proteger tu cuenta. Esto puede pasar si reiniciaste AmpereStore o dejaste un formulario abierto durante un tiempo.</p>
+  <a href="{% url 'login' %}" class="btn btn-primary">Volver a iniciar sesión</a>
+</div>
+
+{% endblock %}

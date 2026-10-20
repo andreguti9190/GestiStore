@@ -6,32 +6,46 @@ administradores controlen el inventario y vean el historial completo de ventas d
 
 ---
 
-## 🚀 Cómo iniciar el proyecto
+## 🚀 Inicio fácil para PC y celular
 
-El proyecto se levanta desde **PowerShell** con el script `iniciar_red.ps1`, que configura los
-hosts permitidos y la IP/puerto con los que se publicará la aplicación en la red local, además de
-usar esa misma dirección en los enlaces que se envían por email.
+Hacé doble clic en:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\iniciar_red.ps1 "IP_DE_TU_PC"
+```text
+iniciar_facil.bat
 ```
 
-Ejemplo:
+El iniciador crea un enlace HTTPS temporal, lo copia al portapapeles y lo abre en la PC. Ese mismo
+enlace se puede enviar o pegar en cualquier celular o computadora. Los demás dispositivos no tienen
+que instalar certificados, descargar una app, estar en el mismo Wi-Fi ni configurar el firewall.
+El enlace funciona mientras la ventana del iniciador permanezca abierta.
+
+Este modo usa un túnel rápido gratuito de Cloudflare. En la primera ejecución, la PC que hospeda
+AmpereStore prepara automáticamente el componente oficial `cloudflared`; las personas que abren el
+enlace no instalan ni descargan nada. La aplicación queda accesible desde Internet
+para quien tenga el enlace, pero las cuentas continúan protegidas por el inicio de sesión de
+AmpereStore. El dominio temporal puede cambiar al reiniciar. El reconocimiento facial queda ligado
+a la cuenta y continúa disponible aunque cambie el enlace.
+
+También se puede iniciar desde una terminal:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\iniciar_red.ps1 "192.168.1.25"
+.\iniciar_facil.bat
 ```
 
-Opcionalmente se puede indicar otro puerto (por defecto `8000`):
+> Para cerrar AmpereStore y desactivar el enlace, presioná **Ctrl + C** o cerrá la ventana.
+
+### Modo avanzado: solamente red local
+
+`iniciar_red.ps1` conserva el modo HTTPS local. Este modo requiere instalar la autoridad
+certificadora en cada dispositivo y está pensado para pruebas sin publicar la aplicación en
+Internet.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\iniciar_red.ps1 "192.168.1.25" 8080
+powershell -ExecutionPolicy Bypass -File .\iniciar_red.ps1
 ```
 
-El script levanta el servidor con `python manage.py runserver 0.0.0.0:<puerto>`, por lo que la
-aplicación queda accesible desde otros dispositivos de la red usando `http://<IP>:<puerto>`.
-
-> Para detener el servidor presioná **Ctrl + C**.
+La IP se detecta automáticamente. También se puede indicar manualmente con `-Ip`, cambiar el puerto
+con `-Port` o proporcionar un dominio propio con `-Domain`.
 
 Si solo querés ejecutarlo de forma local (sin exponerlo en la red), alcanza con:
 
@@ -46,7 +60,7 @@ python manage.py runserver
 - **Python 3**
 - **Django** (con SQLite como base de datos)
 - **HTML / CSS** con plantillas de Django
-- **PowerShell** para el arranque en red
+- **Cloudflare Tunnel** para el enlace HTTPS temporal y **PowerShell** para el modo de red local
 - **SMTP (Gmail)** para el envío de correos
 
 ---
@@ -70,6 +84,7 @@ GestiStore/
 │   ├── static/            # CSS, imágenes
 │   └── Templates/         # Plantillas HTML
 ├── iniciar_red.ps1        # Script de arranque en red (PowerShell)
+├── iniciar_facil.bat      # Inicio de un clic con enlace HTTPS temporal
 ├── manage.py
 ├── db.sqlite3             # Base de datos SQLite
 └── .env                   # Variables de entorno (credenciales de email)
@@ -83,6 +98,11 @@ GestiStore/
 - **Registro** de usuarios con validación de email único.
 - **Inicio de sesión en dos pasos (2FA)**: primero usuario + contraseña y luego un **código de 6
   dígitos enviado por email** (vence a los 10 minutos, máximo 5 intentos y reenvío limitado a 60 s).
+- **Reconocimiento facial opcional con cámara**: funciona desde un navegador moderno en celular o
+  PC, sin Face ID, huella, aplicación ni certificado instalado por el visitante. Se guardan
+  descriptores numéricos del rostro y no fotos o videos.
+- Las passkeys registradas con la versión anterior se conservan y pueden eliminarse desde la
+  sección avanzada de Seguridad.
 - **Recuperación de contraseña** por email con enlaces temporales (valen 1 hora).
 
 ### Roles de usuario
@@ -125,9 +145,9 @@ Cables y Adaptadores, Electrónica y Desarrollo, Seguridad y Domótica, Lectores
 ## ⚙️ Requisitos previos
 
 - Python 3 instalado.
-- Django instalado:
+- Dependencias instaladas:
   ```powershell
-  pip install django
+  pip install -r requirements.txt
   ```
 - Una cuenta de Gmail (o servidor SMTP) para el envío de correos.
 
@@ -145,6 +165,13 @@ EMAIL_USE_TLS=true
 EMAIL_HOST_USER=tu-correo@gmail.com
 EMAIL_HOST_PASSWORD=tu-clave-de-aplicacion
 DEFAULT_FROM_EMAIL=AmpereStore <tu-correo@gmail.com>
+
+# Solamente si se mantienen passkeys en producción:
+WEBAUTHN_RP_ID=amperestore.com.ar
+WEBAUTHN_ORIGIN=https://amperestore.com.ar
+
+# Umbral opcional del reconocimiento facial (menor = más estricto):
+FACE_RECOGNITION_THRESHOLD=0.42
 ```
 
 > Para Gmail se recomienda usar una **contraseña de aplicación**, no la contraseña normal.
@@ -180,6 +207,7 @@ python manage.py test Tienda
 | `/` | Inicio | Autenticado |
 | `/login/` | Inicio de sesión | Público |
 | `/registro/` | Registro de usuario | Público |
+| `/cuenta/seguridad/` | Registrar, actualizar o eliminar reconocimiento facial | Autenticado |
 | `/productos/` | Catálogo de productos | Autenticado |
 | `/carrito/` | Carrito de compras | Operador |
 | `/mis-compras/` | Historial de compras propias | Operador |
@@ -190,6 +218,11 @@ python manage.py test Tienda
 
 ## 📌 Nota
 
-El proyecto es una **demo**, por lo que `DEBUG` está en `True` y el `ALLOWED_HOSTS` se ajusta según
-la IP indicada al ejecutar `iniciar_red.ps1`. Para producción habría que configurar variables de
-entorno, un servidor SMTP propio y una base de datos más robusta.
+El proyecto es una **demo**, por lo que `DEBUG` está en `True`. Para producción habría que configurar
+variables de entorno, un servidor SMTP propio, almacenamiento cifrado adecuado para la plantilla
+biométrica, controles de prueba de vida y una base de datos más robusta.
+
+Los navegadores solamente permiten abrir la cámara desde **HTTPS confiable** o `localhost`.
+`iniciar_facil.bat` crea el enlace HTTPS temporal que debe compartirse con los demás dispositivos;
+no hace falta instalar nada en ellos. `iniciar_red.ps1` queda como alternativa técnica para una red
+local y requiere confiar manualmente su certificado en cada equipo.

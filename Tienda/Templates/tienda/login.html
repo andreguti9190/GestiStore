@@ -29,8 +29,8 @@
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
       <div class="auth-field">
-        <label>Usuario</label>
-        <input type="text" name="username" autofocus required>
+        <label for="login-username">Usuario</label>
+        <input id="login-username" type="text" name="username" value="{{ form.username.value|default:'' }}" autocomplete="username" autofocus required>
       </div>
       <div class="auth-field">
         <label>Contraseña</label>
@@ -42,11 +42,24 @@
       <button type="submit" class="auth-btn" id="login-submit">Ingresar</button>
     </form>
 
+    <div class="auth-divider"><span>o</span></div>
+    <button
+      type="button"
+      class="auth-btn auth-btn-face"
+      data-face-login
+      data-url="{% url 'login_facial' %}"
+      hidden
+    >Ingresar con reconocimiento facial</button>
+    <div id="face-page-status" class="face-page-status" role="status" hidden></div>
+    <p class="auth-face-help" data-face-help hidden>Escribí tu usuario, permití la cámara y mirá al frente. No necesitás Face ID ni huella.</p>
+
     <div class="auth-footer">
       ¿No tenés cuenta? <a href="{% url 'registro' %}">Registrate</a>
     </div>
   </div>
 </div>
+
+{% include 'tienda/_facial_modal.html' %}
 
 <script>
 (function() {
@@ -65,4 +78,8 @@
 })();
 </script>
 
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
+<script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-3" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>
 {% endblock %}
