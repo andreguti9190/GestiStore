@@ -9,6 +9,16 @@ urlpatterns = [
     path('registro/', views.registro, name='registro'),
     path('registro/verificar/', views.verificar_registro, name='verificar_registro'),
     path('terminos-y-condiciones/', views.terminos_y_condiciones, name='terminos_y_condiciones'),
+    path('certificado-local/', views.descargar_certificado_local, name='descargar_certificado_local'),
+    path('cuenta/seguridad/', views.seguridad_cuenta, name='seguridad_cuenta'),
+    path('cuenta/reconocimiento-facial/registrar/', views.registrar_rostro, name='registrar_rostro'),
+    path('cuenta/reconocimiento-facial/eliminar/', views.eliminar_rostro, name='eliminar_rostro'),
+    path('login/reconocimiento-facial/', views.login_facial, name='login_facial'),
+    path('cuenta/passkeys/registro/opciones/', views.passkey_registro_opciones, name='passkey_registro_opciones'),
+    path('cuenta/passkeys/registro/verificar/', views.passkey_registro_verificar, name='passkey_registro_verificar'),
+    path('cuenta/passkeys/<int:pk>/eliminar/', views.eliminar_passkey, name='eliminar_passkey'),
+    path('login/passkey/opciones/', views.passkey_login_opciones, name='passkey_login_opciones'),
+    path('login/passkey/verificar/', views.passkey_login_verificar, name='passkey_login_verificar'),
 
     # Productos
     path('productos/', views.lista_productos, name='lista_productos'),

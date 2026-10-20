@@ -23,6 +23,52 @@ class Perfil(models.Model):
         verbose_name_plural = "Perfiles"
 
 
+class CredencialPasskey(models.Model):
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='credenciales_passkey',
+    )
+    nombre = models.CharField(max_length=80, default='Este dispositivo')
+    credential_id = models.BinaryField(unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.PositiveBigIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    device_type = models.CharField(max_length=30, blank=True)
+    backed_up = models.BooleanField(default=False)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    ultimo_uso = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.usuario.username} - {self.nombre}'
+
+    class Meta:
+        verbose_name = 'Credencial Face ID / passkey'
+        verbose_name_plural = 'Credenciales Face ID / passkey'
+        ordering = ['-creada_en']
+
+
+class CredencialFacial(models.Model):
+    usuario = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='credencial_facial',
+    )
+    descriptor = models.JSONField()
+    modelo = models.CharField(max_length=80, default='vladmandic-face-api-1.7.15')
+    consentimiento_en = models.DateTimeField()
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+    ultimo_uso = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.usuario.username} - reconocimiento facial'
+
+    class Meta:
+        verbose_name = 'Credencial facial'
+        verbose_name_plural = 'Credenciales faciales'
+
+
 class Producto(models.Model):
     CATEGORIA_CHOICES = [
         ('informatica', 'Informática'),

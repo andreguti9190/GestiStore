@@ -44,9 +44,27 @@ class RegistroForm(UserCreationForm):
             'acepta_terminos',
         ]
 
+    def __init__(self, *args, pending_user=None, **kwargs):
+        if pending_user is not None:
+            kwargs['instance'] = pending_user
+        super().__init__(*args, **kwargs)
+        self.pending_user = pending_user
+
+    def clean_username(self):
+        username = self.cleaned_data.get('username')
+        existing = User.objects.filter(username__iexact=username)
+        if self.pending_user:
+            existing = existing.exclude(pk=self.pending_user.pk)
+        if username and existing.exists():
+            raise forms.ValidationError('Ya existe una cuenta con ese nombre de usuario.')
+        return username
+
     def clean_email(self):
         email = self.cleaned_data['email'].strip().lower()
-        if User.objects.filter(email__iexact=email).exists():
+        existing = User.objects.filter(email__iexact=email)
+        if self.pending_user:
+            existing = existing.exclude(pk=self.pending_user.pk)
+        if existing.exists():
             raise forms.ValidationError('Ya existe una cuenta con este email.')
         return email
 

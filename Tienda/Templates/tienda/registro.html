@@ -29,7 +29,7 @@
     </div>
     {% endif %}
 
-    <form method="post">
+    <form method="post" id="registration-form">
       {% csrf_token %}
       <div class="auth-field">
         <label>Usuario</label>
@@ -57,7 +57,7 @@
         {{ form.acepta_terminos }}
         <span>Acepto los <a href="{% url 'terminos_y_condiciones' %}" target="_blank" rel="noopener">Términos y Condiciones</a>.</span>
       </label>
-      <button type="submit" class="auth-btn">Crear cuenta y verificar email</button>
+      <button type="submit" class="auth-btn" id="registration-submit">Crear cuenta y verificar email</button>
     </form>
 
     <div class="auth-footer">
@@ -66,4 +66,21 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var form = document.getElementById('registration-form');
+  var button = document.getElementById('registration-submit');
+  if (!form || !button) return;
+
+  form.addEventListener('submit', function () {
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = 'Creando cuenta…';
+    button.setAttribute('aria-busy', 'true');
+  });
+})();
+</script>
 {% endblock %}
