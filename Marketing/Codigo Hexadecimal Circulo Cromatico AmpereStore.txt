@@ -1,0 +1,19 @@
+Circulo Cromatico AmpereStore (Hexadecimal):
+
+Colores Primarios:
+-#5282bc
+-#353166
+-#455892
+
+Colores Secundarios:
+-#435991
+#4b6da7
+-#3d447c
+
+Colores Terciarios:
+-#4a6da6
+-#3c457b
+-#393a71
+-#414e87
+-#48629c
+-#4e77b1
