@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import CredencialFacial, CredencialPasskey, Producto, Venta, DetalleVenta, Perfil
+from .models import (
+    CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
+    Perfil, Producto, SolicitudDevolucion, Venta,
+)
 
 
 @admin.register(Producto)
@@ -12,9 +15,12 @@ class ProductoAdmin(admin.ModelAdmin):
 
 @admin.register(Venta)
 class VentaAdmin(admin.ModelAdmin):
-    list_display = ['codigo', 'usuario', 'fecha_venta', 'total', 'metodo_pago', 'estado']
-    list_filter = ['metodo_pago', 'estado', 'fecha_venta']
-    search_fields = ['codigo', 'usuario__username']
+    list_display = [
+        'codigo', 'usuario', 'fecha_venta', 'total', 'metodo_pago',
+        'estado_pago', 'estado_envio', 'tipo_entrega',
+    ]
+    list_filter = ['metodo_pago', 'estado_pago', 'estado_envio', 'tipo_entrega', 'fecha_venta']
+    search_fields = ['codigo', 'usuario__username', 'tracking', 'direccion_entrega']
 
 
 @admin.register(DetalleVenta)
@@ -22,13 +28,36 @@ class DetalleVentaAdmin(admin.ModelAdmin):
     list_display = ['venta', 'producto', 'cantidad', 'precio_unitario', 'subtotal']
 
 
+@admin.register(PagoSandbox)
+class PagoSandboxAdmin(admin.ModelAdmin):
+    list_display = [
+        'venta', 'proveedor', 'estado', 'marca_tarjeta', 'ultimos_cuatro',
+        'creado_en', 'aprobado_en',
+    ]
+    list_filter = ['proveedor', 'estado', 'marca_tarjeta']
+    search_fields = ['venta__codigo', 'venta__usuario__username', 'referencia']
+    readonly_fields = [
+        'referencia', 'marca_tarjeta', 'ultimos_cuatro', 'motivo',
+        'stock_liberado', 'comprobante_enviado_en', 'aprobado_en',
+        'creado_en', 'actualizado_en',
+    ]
+
+
 @admin.register(Perfil)
 class PerfilAdmin(admin.ModelAdmin):
     list_display = [
-        'usuario', 'rol', 'fecha_nacimiento', 'terminos_version',
+        'usuario', 'rol', 'fecha_nacimiento', 'responsable_nombre',
+        'responsable_dni', 'terminos_version',
         'terminos_aceptados_en', 'registro_verificado_en',
     ]
     list_filter = ['rol']
+
+
+@admin.register(SolicitudDevolucion)
+class SolicitudDevolucionAdmin(admin.ModelAdmin):
+    list_display = ['venta', 'motivo', 'estado', 'creada_en', 'resuelta_en']
+    list_filter = ['motivo', 'estado', 'creada_en']
+    search_fields = ['venta__codigo', 'venta__usuario__username', 'detalle']
 
 
 @admin.register(CredencialPasskey)

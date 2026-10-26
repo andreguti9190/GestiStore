@@ -1,4 +1,3 @@
-.env
 .mail-config-*
 __pycache__/
 *.py[cod]

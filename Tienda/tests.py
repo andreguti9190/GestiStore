@@ -19,7 +19,10 @@ from webauthn.helpers import bytes_to_base64url
 
 from scripts.generar_certificado_https import generate_certificate
 from scripts.iniciar_facil import _tunnel_url
-from .models import CredencialFacial, CredencialPasskey, DetalleVenta, Perfil, Producto, Venta
+from .models import (
+    CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
+    Perfil, Producto, SolicitudDevolucion, Venta,
+)
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -120,6 +123,55 @@ class LoginDosFactoresTests(TestCase):
         self.assertEqual(len(mail.outbox), 2)
         self.assertIn('Nuevo inicio de sesión', mail.outbox[-1].subject)
         self.assertEqual(mail.outbox[-1].to, [self.user.email])
+
+    @override_settings(
+        ALLOWED_HOSTS=['demo-store.trycloudflare.com'],
+        CSRF_TRUSTED_ORIGINS=['https://demo-store.trycloudflare.com'],
+        SESSION_COOKIE_SECURE=True,
+        CSRF_COOKIE_SECURE=True,
+        SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO', 'https'),
+    )
+    def test_login_conserva_sesion_detras_del_tunel_https(self):
+        tunnel = {
+            'HTTP_HOST': 'demo-store.trycloudflare.com',
+            'HTTP_X_FORWARDED_PROTO': 'https',
+        }
+        response = self.client.post(reverse('login'), {
+            'username': self.user.username,
+            'password': 'UnaClaveSegura123!',
+        }, **tunnel)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('verificar_2fa'))
+        self.assertTrue(response.cookies['sessionid']['secure'])
+        codigo = re.search(r'\b\d{6}\b', mail.outbox[0].body).group()
+
+        response = self.client.post(
+            reverse('verificar_2fa'), {'codigo': codigo}, **tunnel
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('inicio'))
+        self.assertTrue(response.cookies['sessionid']['secure'])
+        response = self.client.get(reverse('inicio'), **tunnel)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_smtp_de_aviso_no_bloquea_la_respuesta_de_login(self):
+        self.iniciar_primer_factor()
+        codigo = re.search(r'\b\d{6}\b', mail.outbox[0].body).group()
+
+        with override_settings(
+            EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend'
+        ), patch('Tienda.views.threading.Thread') as thread:
+            response = self.client.post(
+                reverse('verificar_2fa'), {'codigo': codigo}
+            )
+
+        self.assertRedirects(response, reverse('inicio'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+        thread.assert_called_once()
+        thread.return_value.start.assert_called_once_with()
 
     def test_codigo_incorrecto_no_inicia_sesion(self):
         self.iniciar_primer_factor()
@@ -248,7 +300,7 @@ class RegistroDosFactoresTests(TestCase):
         self.assertIsNotNone(usuario.perfil.registro_verificado_en)
         self.assertNotIn('registration_otp_code_hash', self.client.session)
 
-    def test_menor_de_18_no_puede_registrarse(self):
+    def test_menor_de_18_necesita_adulto_responsable(self):
         fecha_menor = timezone.localdate().replace(year=timezone.localdate().year - 17)
 
         response = self.client.post(
@@ -256,9 +308,26 @@ class RegistroDosFactoresTests(TestCase):
             self.datos_validos(fecha_nacimiento=fecha_menor.isoformat()),
         )
 
-        self.assertContains(response, 'Tenés que ser mayor de 18 años')
+        self.assertContains(response, 'Ingresá el nombre del adulto responsable')
         self.assertFalse(User.objects.filter(username='cliente_nuevo').exists())
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_menor_con_responsable_puede_iniciar_registro(self):
+        fecha_menor = timezone.localdate().replace(year=timezone.localdate().year - 16)
+
+        response = self.client.post(reverse('registro'), self.datos_validos(
+            fecha_nacimiento=fecha_menor.isoformat(),
+            responsable_nombre='María Responsable',
+            responsable_dni='30123456',
+            responsable_parentesco='Madre',
+            autorizacion_responsable='on',
+        ))
+
+        self.assertRedirects(response, reverse('verificar_registro'))
+        perfil = User.objects.get(username='cliente_nuevo').perfil
+        self.assertEqual(perfil.responsable_nombre, 'María Responsable')
+        self.assertEqual(perfil.responsable_dni, '30123456')
+        self.assertEqual(perfil.responsable_parentesco, 'Madre')
 
     def test_sin_aceptar_terminos_no_puede_registrarse(self):
         datos = self.datos_validos()
@@ -655,6 +724,25 @@ class InicioFacilTests(TestCase):
         )
         self.assertIsNone(_tunnel_url('https://sitio-no-autorizado.example'))
 
+    def test_no_confunde_api_de_cloudflare_con_url_publica(self):
+        output = (
+            'Requesting new quick Tunnel on '
+            'https://api.trycloudflare.com/tunnel'
+        )
+
+        self.assertIsNone(_tunnel_url(output))
+
+    def test_ignora_api_y_conserva_url_publica_si_comparten_linea(self):
+        output = (
+            'https://api.trycloudflare.com '
+            'https://bright-store-demo.trycloudflare.com'
+        )
+
+        self.assertEqual(
+            _tunnel_url(output),
+            'https://bright-store-demo.trycloudflare.com',
+        )
+
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class ComprobanteCompraTests(TestCase):
@@ -684,7 +772,7 @@ class ComprobanteCompraTests(TestCase):
         }
         session.save()
 
-    def test_compra_envia_comprobante_con_detalle(self):
+    def test_transferencia_crea_pedido_pendiente_sin_comprobante(self):
         response = self.client.post(reverse('procesar_pago'), {
             'metodo_pago': 'transferencia',
             'verification_method': 'password',
@@ -695,20 +783,384 @@ class ComprobanteCompraTests(TestCase):
         venta = Venta.objects.get(usuario=self.user)
         self.assertEqual(venta.total, 25000)
         self.assertEqual(DetalleVenta.objects.filter(venta=venta).count(), 1)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(venta.codigo, mail.outbox[0].subject)
-        self.assertIn('Teclado', mail.outbox[0].body)
+        self.assertEqual(venta.estado, 'pendiente')
+        self.assertEqual(venta.estado_pago, 'pendiente')
+        self.assertEqual(venta.pago_sandbox.proveedor, 'transferencia')
+        self.assertEqual(len(mail.outbox), 0)
         self.producto.refresh_from_db()
         self.assertEqual(self.producto.stock, 3)
 
-    @patch('Tienda.views.send_purchase_receipt', side_effect=Exception('SMTP caído'))
-    def test_falla_de_email_no_anula_la_compra(self, _send):
+    def test_envio_guarda_direccion_y_coordenadas(self):
+        self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'transferencia',
+            'verification_method': 'password',
+            'account_password': 'UnaClaveSegura123!',
+            'tipo_entrega': 'envio',
+            'direccion_entrega': 'Av. Corrientes 1234',
+            'entrega_localidad': 'CABA',
+            'entrega_provincia': 'Buenos Aires',
+            'entrega_codigo_postal': 'C1043',
+            'entrega_latitud': '-34.603700',
+            'entrega_longitud': '-58.381600',
+        })
+
+        venta = Venta.objects.get(usuario=self.user)
+        self.assertEqual(venta.tipo_entrega, 'envio')
+        self.assertEqual(venta.direccion_entrega, 'Av. Corrientes 1234')
+        self.assertEqual(str(venta.entrega_latitud), '-34.603700')
+
+    def test_envio_requiere_ubicacion_en_mapa(self):
         response = self.client.post(reverse('procesar_pago'), {
             'metodo_pago': 'transferencia',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
+            'tipo_entrega': 'envio',
+            'direccion_entrega': 'Av. Corrientes 1234',
+            'entrega_localidad': 'CABA',
+            'entrega_provincia': 'Buenos Aires',
+            'entrega_codigo_postal': 'C1043',
+        }, follow=True)
+
+        self.assertContains(response, 'Marcá en el mapa')
+        self.assertFalse(Venta.objects.filter(usuario=self.user).exists())
+
+    @patch('Tienda.views.send_purchase_receipt', side_effect=Exception('SMTP caído'))
+    def test_falla_de_email_no_anula_la_compra(self, _send):
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'tarjeta',
+            'verification_method': 'password',
+            'account_password': 'UnaClaveSegura123!',
         })
+        payment = PagoSandbox.objects.get(venta__usuario=self.user)
+        response = self.client.post(
+            reverse('pago_sandbox', args=[payment.referencia]),
+            {'demo_token': 'demo_visa_approved'},
+        )
 
         self.assertEqual(self.client.session['comprobante_enviado'], False)
         self.assertRedirects(response, reverse('compra_exitosa'))
         self.assertEqual(Venta.objects.filter(usuario=self.user).count(), 1)
+        self.assertEqual(Venta.objects.get(usuario=self.user).estado_pago, 'pagado')
+
+    @patch('Tienda.views.publish_dashboard_event')
+    def test_compra_emite_evento_websocket_al_confirmarse(self, publish):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('procesar_pago'), {
+                'metodo_pago': 'transferencia',
+                'verification_method': 'password',
+                'account_password': 'UnaClaveSegura123!',
+            })
+
+        self.assertRedirects(response, reverse('compra_exitosa'))
+        venta = Venta.objects.get(usuario=self.user)
+        publish.assert_called_once_with('sale.created', venta.pk)
+
+    def iniciar_pago_tarjeta(self):
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'tarjeta',
+            'verification_method': 'password',
+            'account_password': 'UnaClaveSegura123!',
+        })
+        payment = PagoSandbox.objects.get(venta__usuario=self.user)
+        self.assertRedirects(
+            response,
+            reverse('pago_sandbox', args=[payment.referencia]),
+            fetch_redirect_response=False,
+        )
+        return payment
+
+    def test_tarjeta_aprobada_detecta_marca_y_envia_comprobante(self):
+        payment = self.iniciar_pago_tarjeta()
+
+        response = self.client.post(
+            reverse('pago_sandbox', args=[payment.referencia]),
+            {'demo_token': 'demo_mastercard_approved'},
+        )
+
+        self.assertRedirects(response, reverse('compra_exitosa'))
+        payment.refresh_from_db()
+        payment.venta.refresh_from_db()
+        self.assertEqual(payment.estado, 'aprobado')
+        self.assertEqual(payment.marca_tarjeta, 'Mastercard')
+        self.assertEqual(payment.ultimos_cuatro, '4444')
+        self.assertEqual(payment.venta.estado_pago, 'pagado')
+        self.assertEqual(payment.venta.estado, 'completada')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(payment.venta.codigo, mail.outbox[0].subject)
+
+    def test_tarjeta_rechazada_libera_stock(self):
+        payment = self.iniciar_pago_tarjeta()
+
+        self.client.post(
+            reverse('pago_sandbox', args=[payment.referencia]),
+            {'demo_token': 'demo_mastercard_rejected'},
+        )
+
+        payment.refresh_from_db()
+        payment.venta.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(payment.estado, 'rechazado')
+        self.assertTrue(payment.stock_liberado)
+        self.assertEqual(payment.venta.estado_pago, 'rechazado')
+        self.assertEqual(payment.venta.estado, 'cancelada')
+        self.assertEqual(self.producto.stock, 5)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_tarjeta_pendiente_no_envia_comprobante(self):
+        payment = self.iniciar_pago_tarjeta()
+
+        self.client.post(
+            reverse('pago_sandbox', args=[payment.referencia]),
+            {'demo_token': 'demo_visa_pending'},
+        )
+
+        payment.refresh_from_db()
+        payment.venta.refresh_from_db()
+        self.assertEqual(payment.estado, 'pendiente')
+        self.assertEqual(payment.venta.estado_pago, 'procesando')
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_sandbox_rechaza_tarjeta_que_no_es_de_prueba(self):
+        payment = self.iniciar_pago_tarjeta()
+
+        response = self.client.post(
+            reverse('pago_sandbox', args=[payment.referencia]),
+            {'demo_token': 'token_inventado'},
+            follow=True,
+        )
+
+        self.assertContains(response, 'no pertenece al entorno de demostración')
+        payment.refresh_from_db()
+        self.assertEqual(payment.estado, 'pendiente')
+
+    def test_pago_aprobado_repetido_no_duplica_el_comprobante(self):
+        payment = self.iniciar_pago_tarjeta()
+        url = reverse('pago_sandbox', args=[payment.referencia])
+
+        self.client.post(url, {'demo_token': 'demo_visa_approved'})
+        self.client.post(url, {'demo_token': 'demo_visa_approved'})
+
+        self.assertEqual(len(mail.outbox), 1)
+
+
+class DashboardVendedorTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='vendedor', email='vendedor@example.com', password='clave-segura'
+        )
+        Perfil.objects.create(usuario=self.admin, rol='admin')
+        self.cliente = User.objects.create_user(
+            username='cliente-dashboard', email='cliente@example.com', password='clave-segura'
+        )
+        Perfil.objects.create(usuario=self.cliente, rol='operador')
+        self.producto = Producto.objects.create(
+            nombre='Monitor profesional', sku='MON-001', precio='100000.00',
+            costo='65000.00', stock=3, categoria='informatica',
+        )
+        self.venta = Venta.objects.create(
+            usuario=self.cliente, total='100000.00', metodo_pago='transferencia',
+            estado='completada', estado_pago='pagado', estado_envio='preparando',
+        )
+        DetalleVenta.objects.create(
+            venta=self.venta, producto=self.producto, cantidad=1,
+            precio_unitario='100000.00',
+        )
+        self.venta.refresh_from_db()
+        self.client.force_login(self.admin)
+
+    def test_renderiza_metricas_y_datos_reales(self):
+        response = self.client.get(reverse('historial_ventas'), {'periodo': 'todo'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Panel vendedor')
+        self.assertContains(response, self.venta.codigo)
+        self.assertContains(response, 'Monitor profesional')
+        self.assertContains(response, 'data-websocket-url=')
+        self.assertContains(response, 'Actualización automática')
+        self.assertEqual(response.context['metric_cards'][0]['value'], self.venta.total)
+        self.assertEqual(response.context['metric_cards'][1]['value'], 35000)
+
+    def test_busqueda_y_filtros_de_pedidos(self):
+        response = self.client.get(reverse('historial_ventas'), {
+            'periodo': 'todo', 'q': 'MON-001', 'envio': 'preparando',
+        })
+
+        self.assertEqual(response.context['page_obj'].paginator.count, 1)
+
+    @patch('Tienda.views.publish_dashboard_event')
+    def test_actualiza_estado_de_pago_y_envio(self, publish):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('historial_ventas'), {
+                'venta_id': self.venta.pk,
+                'estado_pago': 'pagado',
+                'estado_envio': 'enviado',
+            })
+
+        self.assertRedirects(response, reverse('historial_ventas'))
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.estado_envio, 'enviado')
+        self.assertEqual(self.venta.estado, 'completada')
+        publish.assert_called_once_with('sale.updated', self.venta.pk)
+
+    def test_admin_guarda_transportista_y_tracking(self):
+        self.client.post(reverse('historial_ventas'), {
+            'venta_id': self.venta.pk,
+            'estado_pago': 'pagado',
+            'estado_envio': 'enviado',
+            'transportista': 'Correo Argentino',
+            'tracking': 'AR123456789',
+        })
+
+        self.venta.refresh_from_db()
+        self.assertEqual(self.venta.transportista, 'Correo Argentino')
+        self.assertEqual(self.venta.tracking, 'AR123456789')
+
+    def test_cliente_solicita_y_admin_aprueba_devolucion(self):
+        self.venta.estado_envio = 'entregado'
+        self.venta.save(update_fields=['estado_envio'])
+        payment = PagoSandbox.objects.create(
+            venta=self.venta, proveedor='transferencia', estado='aprobado'
+        )
+        self.client.force_login(self.cliente)
+
+        response = self.client.post(reverse('solicitar_devolucion', args=[self.venta.pk]), {
+            'motivo': 'defectuoso', 'detalle': 'No enciende.',
+        })
+
+        self.assertRedirects(response, reverse('mis_compras'))
+        request_return = SolicitudDevolucion.objects.get(venta=self.venta)
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('resolver_devolucion', args=[request_return.pk]),
+            {'decision': 'aprobada', 'respuesta': 'Reembolso autorizado.'},
+        )
+
+        self.assertRedirects(response, reverse('historial_ventas'))
+        request_return.refresh_from_db()
+        self.venta.refresh_from_db()
+        payment.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(request_return.estado, 'aprobada')
+        self.assertEqual(self.venta.estado_pago, 'reembolsado')
+        self.assertEqual(payment.estado, 'reembolsado')
+        self.assertTrue(payment.stock_liberado)
+        self.assertEqual(self.producto.stock, 4)
+
+    @patch('Tienda.views._send_purchase_receipt_once', return_value=True)
+    def test_admin_confirma_transferencia_pendiente(self, receipt):
+        pending = Venta.objects.create(
+            usuario=self.cliente, total='100000.00', metodo_pago='transferencia',
+            estado='pendiente', estado_pago='pendiente', estado_envio='pendiente',
+        )
+        PagoSandbox.objects.create(venta=pending, proveedor='transferencia')
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('historial_ventas'), {
+                'venta_id': pending.pk,
+                'estado_pago': 'pagado',
+                'estado_envio': 'preparando',
+            })
+
+        self.assertRedirects(response, reverse('historial_ventas'))
+        pending.refresh_from_db()
+        self.assertEqual(pending.estado, 'completada')
+        self.assertEqual(pending.pago_sandbox.estado, 'aprobado')
+        receipt.assert_called_once_with(pending)
+
+    def test_cancelar_transferencia_pendiente_libera_stock(self):
+        pending = Venta.objects.create(
+            usuario=self.cliente, total='100000.00', metodo_pago='transferencia',
+            estado='pendiente', estado_pago='pendiente', estado_envio='pendiente',
+        )
+        DetalleVenta.objects.create(
+            venta=pending, producto=self.producto, cantidad=1,
+            precio_unitario='100000.00',
+        )
+        PagoSandbox.objects.create(venta=pending, proveedor='transferencia')
+        self.producto.stock -= 1
+        self.producto.save(update_fields=['stock'])
+
+        self.client.post(reverse('historial_ventas'), {
+            'venta_id': pending.pk,
+            'estado_pago': 'pendiente',
+            'estado_envio': 'cancelado',
+        })
+
+        pending.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(pending.estado_pago, 'rechazado')
+        self.assertEqual(pending.estado, 'cancelada')
+        self.assertEqual(self.producto.stock, 3)
+        self.assertTrue(pending.pago_sandbox.stock_liberado)
+
+    def test_exporta_csv(self):
+        response = self.client.get(reverse('exportar_ventas_csv'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
+        self.assertIn(self.venta.codigo, response.content.decode('utf-8-sig'))
+
+    def test_operador_no_puede_abrir_dashboard(self):
+        self.client.force_login(self.cliente)
+
+        response = self.client.get(reverse('historial_ventas'))
+
+        self.assertEqual(response.status_code, 403)
+
+
+class AsistenteGuiadoTests(TestCase):
+    def setUp(self):
+        self.product = Producto.objects.create(
+            nombre='Mouse', precio='1000.00', stock=4, activo=True,
+        )
+
+    def test_responde_stock_con_datos_reales(self):
+        response = self.client.post(reverse('asistente_consulta'), {'intent': 'stock'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('1 productos', response.json()['answer'])
+
+    def test_no_acepta_preguntas_fuera_del_guion(self):
+        response = self.client.post(reverse('asistente_consulta'), {'intent': 'inventado'})
+
+        self.assertEqual(response.status_code, 400)
+
+
+class DashboardRealtimeTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin-websocket', email='ws@example.com', password='clave-segura'
+        )
+        Perfil.objects.create(usuario=self.admin, rol='admin')
+        self.client.force_login(self.admin)
+        self.session_key = self.client.cookies[settings.SESSION_COOKIE_NAME].value
+
+    def websocket_scope(self):
+        headers = [
+            (b'host', b'demo-store.trycloudflare.com'),
+            (b'origin', b'https://demo-store.trycloudflare.com'),
+            (
+                b'cookie',
+                f'{settings.SESSION_COOKIE_NAME}={self.session_key}'.encode(),
+            ),
+        ]
+        return {
+            'type': 'websocket', 'path': '/ws/ventas/',
+            'headers': headers, 'scheme': 'wss',
+        }
+
+    def test_websocket_valida_sesion_admin(self):
+        from .realtime import _authenticated_admin, _session_key
+
+        session_key = _session_key(self.websocket_scope())
+
+        self.assertEqual(session_key, self.session_key)
+        self.assertEqual(_authenticated_admin(session_key), self.admin.pk)
+
+    def test_websocket_exige_mismo_origen(self):
+        from .realtime import _same_origin
+
+        self.assertTrue(_same_origin(self.websocket_scope()))
+        scope = self.websocket_scope()
+        scope['headers'][1] = (b'origin', b'https://sitio-malicioso.example')
+        self.assertFalse(_same_origin(scope))

@@ -3,7 +3,8 @@
 {% block title %} - Mis compras{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% static 'tienda/css/mis_compras.css' %}">
+<link rel="stylesheet" href="{% static 'tienda/css/mis_compras.css' %}?v=20261026-2">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
 <div class="mis-compras-header">
   <div>
@@ -32,10 +33,25 @@
         <span class="compra-label">Método de pago</span>
         <span>{{ venta.get_metodo_pago_display }}</span>
       </div>
-      <form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
+      <div class="compra-metodo">
+        <span class="compra-label">Estado del pago</span>
+        <span>{{ venta.get_estado_pago_display }}</span>
+      </div>
+      <section class="purchase-shipping">
+        <div class="purchase-shipping-head"><div><span class="compra-label">Entrega</span><strong>{{ venta.get_tipo_entrega_display }}</strong></div><span class="shipping-pill shipping-{{ venta.estado_envio }}">{{ venta.get_estado_envio_display }}</span></div>
+        <div class="shipping-timeline" data-state="{{ venta.estado_envio }}">
+          <span class="done">1<small>Recibido</small></span><i></i><span class="{% if venta.estado_envio != 'pendiente' %}done{% endif %}">2<small>Preparando</small></span><i></i><span class="{% if venta.estado_envio == 'enviado' or venta.estado_envio == 'entregado' %}done{% endif %}">3<small>Enviado</small></span><i></i><span class="{% if venta.estado_envio == 'entregado' %}done{% endif %}">4<small>Entregado</small></span>
+        </div>
+        {% if venta.tipo_entrega == 'envio' %}<p class="shipping-address"><strong>{{ venta.direccion_entrega }}</strong>{% if venta.entrega_localidad %}<br>{{ venta.entrega_localidad }}, {{ venta.entrega_provincia }} · {{ venta.entrega_codigo_postal }}{% endif %}{% if venta.tracking %}<br>{{ venta.transportista|default:'Seguimiento' }}: <b>{{ venta.tracking }}</b>{% endif %}</p>{% else %}<p class="shipping-address">El vendedor avisará cuando el pedido esté listo para retirar.</p>{% endif %}
+        {% if venta.entrega_latitud and venta.entrega_longitud %}<div class="purchase-map" data-lat="{{ venta.entrega_latitud|stringformat:'s' }}" data-lng="{{ venta.entrega_longitud|stringformat:'s' }}" data-code="{{ venta.codigo }}"></div>{% endif %}
+      </section>
+      {% if venta.devolucion %}<section class="return-status return-{{ venta.devolucion.estado }}"><strong>Devolución {{ venta.devolucion.get_estado_display|lower }}</strong><span>{{ venta.devolucion.get_motivo_display }}</span>{% if venta.devolucion.respuesta %}<p>Respuesta del vendedor: {{ venta.devolucion.respuesta }}</p>{% endif %}</section>
+      {% elif venta.estado_pago == 'pagado' and venta.estado_envio == 'entregado' %}<details class="return-request"><summary>Solicitar devolución</summary><form method="post" action="{% url 'solicitar_devolucion' venta.pk %}">{% csrf_token %}<label>Motivo<select name="motivo" required><option value="">Elegí un motivo</option><option value="arrepentimiento">Me arrepentí de la compra</option><option value="defectuoso">El producto llegó defectuoso</option><option value="incorrecto">Recibí un producto incorrecto</option><option value="danado">El pedido llegó dañado</option><option value="otro">Otro motivo</option></select></label><label>Detalle<textarea name="detalle" maxlength="600" rows="3" placeholder="Contanos brevemente qué ocurrió"></textarea></label><button type="submit" class="btn btn-secondary">Enviar solicitud</button></form></details>
+      {% endif %}
+      {% if venta.estado_pago == 'pagado' %}<form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-secondary">Reenviar comprobante por email</button>
-      </form>
+      </form>{% else %}<p class="compra-label">El comprobante se habilita cuando el pago queda confirmado.</p>{% endif %}
       <div class="compra-productos">
         {% for d in venta.detalles.all %}
         <div class="compra-producto">
@@ -69,4 +85,17 @@
 </div>
 {% endif %}
 
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+document.querySelectorAll('.purchase-map').forEach(function (node) {
+  if (!window.L) { node.textContent = 'Mapa no disponible sin conexión.'; return; }
+  var lat = Number(node.dataset.lat.replace(',', '.'));
+  var lng = Number(node.dataset.lng.replace(',', '.'));
+  var map = L.map(node, { scrollWheelZoom: false, dragging: false }).setView([lat, lng], 14);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  L.marker([lat, lng], { title: 'Entrega ' + node.dataset.code }).addTo(map).bindPopup('Punto aproximado de entrega');
+});
+</script>
 {% endblock %}

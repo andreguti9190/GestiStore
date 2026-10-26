@@ -42,8 +42,28 @@
       <div class="auth-field">
         <label for="{{ form.fecha_nacimiento.id_for_label }}">¿Cuándo naciste?</label>
         {{ form.fecha_nacimiento }}
-        <div class="auth-help">Tenés que ser mayor de 18 años para registrarte.</div>
+        <div class="auth-help">Si sos menor de 18 años, un adulto responsable debe autorizar la cuenta.</div>
       </div>
+      <section class="guardian-fields" id="guardian-fields" {% if not form.responsable_nombre.value and not form.errors %}hidden{% endif %}>
+        <div class="guardian-title"><strong>Autorización de un adulto</strong><span>Datos requeridos para cuentas de menores de 18 años</span></div>
+        <div class="auth-field">
+          <label for="{{ form.responsable_nombre.id_for_label }}">Nombre y apellido</label>
+          {{ form.responsable_nombre }}
+        </div>
+        <div class="auth-field">
+          <label for="{{ form.responsable_dni.id_for_label }}">DNI del adulto responsable</label>
+          {{ form.responsable_dni }}
+        </div>
+        <div class="auth-field">
+          <label for="{{ form.responsable_parentesco.id_for_label }}">Vínculo</label>
+          {{ form.responsable_parentesco }}
+        </div>
+        <label class="auth-checkbox" for="{{ form.autorizacion_responsable.id_for_label }}">
+          {{ form.autorizacion_responsable }}
+          <span>Confirmo que soy el adulto responsable y autorizo las compras de esta cuenta.</span>
+        </label>
+        <p class="guardian-privacy">El DNI se usa exclusivamente para registrar la autorización dentro de esta demostración.</p>
+      </section>
       <div class="auth-field">
         <label>Contraseña</label>
         {{ form.password1 }}
@@ -73,7 +93,21 @@
 (function () {
   var form = document.getElementById('registration-form');
   var button = document.getElementById('registration-submit');
+  var birthDate = document.getElementById('id_fecha_nacimiento');
+  var guardian = document.getElementById('guardian-fields');
   if (!form || !button) return;
+
+  function updateGuardianFields() {
+    if (!birthDate || !guardian || !birthDate.value) return;
+    var born = new Date(birthDate.value + 'T12:00:00');
+    var today = new Date();
+    var age = today.getFullYear() - born.getFullYear();
+    if (today.getMonth() < born.getMonth() ||
+        (today.getMonth() === born.getMonth() && today.getDate() < born.getDate())) age -= 1;
+    guardian.hidden = age >= 18;
+  }
+  if (birthDate) birthDate.addEventListener('change', updateGuardianFields);
+  updateGuardianFields();
 
   form.addEventListener('submit', function () {
     if (button.disabled) return;

@@ -12,6 +12,9 @@ class Perfil(models.Model):
     usuario = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
     rol = models.CharField(max_length=10, choices=ROL_CHOICES, default='operador')
     fecha_nacimiento = models.DateField(null=True, blank=True)
+    responsable_nombre = models.CharField(max_length=120, blank=True)
+    responsable_dni = models.CharField(max_length=12, blank=True)
+    responsable_parentesco = models.CharField(max_length=40, blank=True)
     terminos_aceptados_en = models.DateTimeField(null=True, blank=True)
     terminos_version = models.CharField(max_length=20, blank=True)
     registro_verificado_en = models.DateTimeField(null=True, blank=True)
@@ -84,8 +87,10 @@ class Producto(models.Model):
     ]
 
     nombre = models.CharField(max_length=200)
+    sku = models.CharField(max_length=50, blank=True, default='', db_index=True)
     descripcion = models.TextField(blank=True)
     precio = models.DecimalField(max_digits=10, decimal_places=2)
+    costo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stock = models.PositiveIntegerField(default=0)
     categoria = models.CharField(max_length=30, choices=CATEGORIA_CHOICES, default='otros')
     imagen = models.ImageField(upload_to='productos/', blank=True, null=True)
@@ -112,12 +117,41 @@ class Venta(models.Model):
         ('completada', 'Completada'),
         ('cancelada', 'Cancelada'),
     ]
+    ESTADO_PAGO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('procesando', 'Procesando'),
+        ('pagado', 'Pagado'),
+        ('rechazado', 'Rechazado'),
+        ('reembolsado', 'Reembolsado'),
+    ]
+    ESTADO_ENVIO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('preparando', 'Preparando'),
+        ('enviado', 'Enviado'),
+        ('entregado', 'Entregado'),
+        ('cancelado', 'Cancelado'),
+    ]
+    TIPO_ENTREGA_CHOICES = [
+        ('envio', 'Envío a domicilio'),
+        ('retiro', 'Retiro en tienda'),
+    ]
 
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ventas')
     fecha_venta = models.DateTimeField(auto_now_add=True)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     metodo_pago = models.CharField(max_length=15, choices=METODO_PAGO_CHOICES)
     estado = models.CharField(max_length=12, choices=ESTADO_CHOICES, default='completada')
+    estado_pago = models.CharField(max_length=12, choices=ESTADO_PAGO_CHOICES, default='pagado')
+    estado_envio = models.CharField(max_length=12, choices=ESTADO_ENVIO_CHOICES, default='preparando')
+    tipo_entrega = models.CharField(max_length=10, choices=TIPO_ENTREGA_CHOICES, default='retiro')
+    direccion_entrega = models.CharField(max_length=250, blank=True)
+    entrega_localidad = models.CharField(max_length=100, blank=True)
+    entrega_provincia = models.CharField(max_length=100, blank=True)
+    entrega_codigo_postal = models.CharField(max_length=12, blank=True)
+    entrega_latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    entrega_longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    transportista = models.CharField(max_length=80, blank=True)
+    tracking = models.CharField(max_length=80, blank=True)
     codigo = models.CharField(max_length=20, unique=True, blank=True)
 
     def save(self, *args, **kwargs):
@@ -148,3 +182,82 @@ class DetalleVenta(models.Model):
 
     class Meta:
         verbose_name_plural = "Detalles de venta"
+
+
+class PagoSandbox(models.Model):
+    """Intento de pago de demostración sin almacenar datos sensibles."""
+
+    PROVEEDOR_CHOICES = [
+        ('demopay', 'DemoPay Sandbox'),
+        ('transferencia', 'Transferencia bancaria'),
+    ]
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('procesando', 'Procesando'),
+        ('aprobado', 'Aprobado'),
+        ('rechazado', 'Rechazado'),
+        ('reembolsado', 'Reembolsado'),
+    ]
+
+    venta = models.OneToOneField(
+        Venta,
+        on_delete=models.CASCADE,
+        related_name='pago_sandbox',
+    )
+    referencia = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    proveedor = models.CharField(max_length=20, choices=PROVEEDOR_CHOICES)
+    estado = models.CharField(max_length=12, choices=ESTADO_CHOICES, default='pendiente')
+    marca_tarjeta = models.CharField(max_length=20, blank=True)
+    ultimos_cuatro = models.CharField(max_length=4, blank=True)
+    motivo = models.CharField(max_length=120, blank=True)
+    stock_liberado = models.BooleanField(default=False)
+    comprobante_enviado_en = models.DateTimeField(null=True, blank=True)
+    aprobado_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.venta.codigo} - {self.get_estado_display()}'
+
+    class Meta:
+        ordering = ['-creado_en']
+        verbose_name = 'Pago de demostración'
+        verbose_name_plural = 'Pagos de demostración'
+
+
+class SolicitudDevolucion(models.Model):
+    """Solicitud trazable de devolución asociada a una compra."""
+
+    MOTIVO_CHOICES = [
+        ('arrepentimiento', 'Me arrepentí de la compra'),
+        ('defectuoso', 'El producto llegó defectuoso'),
+        ('incorrecto', 'Recibí un producto incorrecto'),
+        ('danado', 'El pedido llegó dañado'),
+        ('otro', 'Otro motivo'),
+    ]
+    ESTADO_CHOICES = [
+        ('solicitada', 'Solicitada'),
+        ('aprobada', 'Aprobada'),
+        ('rechazada', 'Rechazada'),
+    ]
+
+    venta = models.OneToOneField(
+        Venta,
+        on_delete=models.CASCADE,
+        related_name='devolucion',
+    )
+    motivo = models.CharField(max_length=20, choices=MOTIVO_CHOICES)
+    detalle = models.TextField(blank=True, max_length=600)
+    estado = models.CharField(max_length=12, choices=ESTADO_CHOICES, default='solicitada')
+    respuesta = models.CharField(max_length=300, blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+    resuelta_en = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.venta.codigo} - {self.get_estado_display()}'
+
+    class Meta:
+        ordering = ['-creada_en']
+        verbose_name = 'Solicitud de devolución'
+        verbose_name_plural = 'Solicitudes de devolución'
