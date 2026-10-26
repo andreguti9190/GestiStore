@@ -3,7 +3,8 @@
 {% block title %} - Pago{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% static 'tienda/css/pago.css' %}">
+<link rel="stylesheet" href="{% static 'tienda/css/pago.css' %}?v=20261026-2">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
 
 <div class="pago-header">
@@ -17,6 +18,28 @@
 
     <form method="post" action="{% url 'procesar_pago' %}" id="form-pago">
       {% csrf_token %}
+
+      <section class="delivery-section">
+        <div class="delivery-heading"><span class="delivery-icon">⌖</span><div><h2>Entrega</h2><p>Elegí cómo querés recibir tu compra</p></div></div>
+        <div class="delivery-options">
+          <label><input type="radio" name="tipo_entrega" value="envio" checked><span><strong>Envío a domicilio</strong><small>Seguimiento desde Mis compras</small></span></label>
+          <label><input type="radio" name="tipo_entrega" value="retiro"><span><strong>Retiro en tienda</strong><small>Coordinación sin costo</small></span></label>
+        </div>
+        <div id="delivery-address-fields">
+          <div class="delivery-form-grid">
+            <label class="delivery-full">Dirección y altura<input name="direccion_entrega" maxlength="250" autocomplete="street-address" placeholder="Ej. Av. Corrientes 1234, piso 2" required></label>
+            <label>Localidad<input name="entrega_localidad" maxlength="100" autocomplete="address-level2" placeholder="Ciudad" required></label>
+            <label>Provincia<input name="entrega_provincia" maxlength="100" autocomplete="address-level1" placeholder="Provincia" required></label>
+            <label>Código postal<input name="entrega_codigo_postal" maxlength="12" autocomplete="postal-code" placeholder="C1043" required></label>
+          </div>
+          <div class="delivery-map-copy"><strong>Marcá el punto aproximado</strong><span>No enviamos tu domicilio a servicios de búsqueda externos.</span></div>
+          <div id="delivery-map" aria-label="Mapa para seleccionar punto de entrega"></div>
+          <input type="hidden" name="entrega_latitud" id="delivery-latitude">
+          <input type="hidden" name="entrega_longitud" id="delivery-longitude">
+          <div class="delivery-map-actions"><span id="delivery-map-status">Hacé clic sobre el mapa para colocar el marcador.</span><button type="button" id="delivery-demo-location">Usar punto de demostración</button></div>
+        </div>
+        <div id="pickup-copy" class="pickup-copy" hidden><strong>Retiro coordinado</strong><p>Cuando el pago quede aprobado, el vendedor preparará el pedido y actualizará su estado.</p></div>
+      </section>
 
       <div class="pago-metodos">
         <label>
@@ -43,43 +66,14 @@
       </div>
 
       <div id="seccion-tarjeta">
-        <div class="pago-campo">
-          <label>Número de tarjeta</label>
-          <input type="text" name="numero_tarjeta" id="numero_tarjeta" maxlength="19"
-                 placeholder="1234 5678 9012 3456" oninput="formatearTarjeta(this)">
-        </div>
-        <div class="pago-campo">
-          <label>Nombre del titular</label>
-          <input type="text" name="nombre_tarjeta" placeholder="Como figura en la tarjeta">
-        </div>
-        <div class="pago-fila">
-          <div class="pago-campo">
-            <label>Vencimiento</label>
-            <input type="text" name="vencimiento" placeholder="MM/AA" maxlength="5"
-                   oninput="formatearVencimiento(this)">
-          </div>
-          <div class="pago-campo">
-            <label>CVV</label>
-            <input type="text" name="cvv" placeholder="123" maxlength="4"
-                   oninput="this.value=this.value.replace(/\D/g,'')">
-          </div>
-        </div>
-
-        <div id="card-preview" class="card-preview">
-          <div class="card-preview-header">AMPERESTORE PAY</div>
-          <div id="prev-numero" class="card-preview-numero">
-            &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull;
-          </div>
-          <div class="card-preview-footer">
-            <div>
-              <div class="card-preview-label">Titular</div>
-              <div id="prev-nombre">TU NOMBRE</div>
-            </div>
-            <div>
-              <div class="card-preview-label">Vence</div>
-              <div id="prev-vence">MM/AA</div>
-            </div>
-          </div>
+        <div class="sandbox-intro">
+          <div class="sandbox-brand"><span>⚡</span><div><strong>DemoPay Sandbox</strong><small>Entorno seguro de demostración</small></div></div>
+          <p>Después de confirmar tu identidad te vamos a redirigir a la pasarela de prueba. Allí podrás usar tarjetas ficticias Visa, Mastercard o American Express y simular pagos aprobados, pendientes o rechazados.</p>
+          <ul>
+            <li>Detecta automáticamente la red de la tarjeta.</li>
+            <li>No acepta ni almacena tarjetas reales.</li>
+            <li>El pedido cambia de estado como en una integración real.</li>
+          </ul>
         </div>
       </div>
 
@@ -90,13 +84,9 @@
           <p><strong>Alias:</strong> GESTISTORE.PAGOS</p>
           <p><strong>Titular:</strong> GestiStore S.A.</p>
           <div class="transferencia-nota">
-            Una vez realizada la transferencia, tu compra se confirmará automáticamente.
+            El pedido quedará pendiente hasta que el vendedor confirme la acreditación desde su panel.
           </div>
         </div>
-        <input type="hidden" name="numero_tarjeta" value="0000000000000000">
-        <input type="hidden" name="nombre_tarjeta" value="Transferencia">
-        <input type="hidden" name="vencimiento" value="00/00">
-        <input type="hidden" name="cvv" value="000">
       </div>
 
       <div class="pago-campo" style="margin-top:22px">
@@ -124,7 +114,7 @@
         <div id="face-page-status" class="face-page-status" role="status" hidden></div>
       </div>
 
-      <button type="submit" class="btn-pago">
+      <button type="submit" class="btn-pago" id="submit-payment">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         Confirmar pago &mdash; ${{ total }}
       </button>
@@ -169,29 +159,46 @@
 {% include 'tienda/_facial_modal.html' %}
 
 <script>
+var deliveryMap;
+var deliveryMarker;
+function setDeliveryPoint(lat, lng) {
+  document.getElementById('delivery-latitude').value = Number(lat).toFixed(6);
+  document.getElementById('delivery-longitude').value = Number(lng).toFixed(6);
+  document.getElementById('delivery-map-status').textContent = 'Punto seleccionado: ' + Number(lat).toFixed(4) + ', ' + Number(lng).toFixed(4);
+  if (deliveryMap && window.L) {
+    if (deliveryMarker) deliveryMarker.setLatLng([lat, lng]);
+    else deliveryMarker = L.marker([lat, lng], { title: 'Punto de entrega' }).addTo(deliveryMap);
+  }
+}
+function initDeliveryMap() {
+  if (!window.L || deliveryMap) return;
+  deliveryMap = L.map('delivery-map', { scrollWheelZoom: false }).setView([-34.6037, -58.3816], 12);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(deliveryMap);
+  deliveryMap.on('click', function (event) { setDeliveryPoint(event.latlng.lat, event.latlng.lng); });
+}
+function updateDeliveryMethod() {
+  var method = document.querySelector('input[name=tipo_entrega]:checked').value;
+  var address = document.getElementById('delivery-address-fields');
+  var pickup = document.getElementById('pickup-copy');
+  var isShipping = method === 'envio';
+  address.hidden = !isShipping;
+  pickup.hidden = isShipping;
+  address.querySelectorAll('input:not([type=hidden])').forEach(function (input) { input.required = isShipping; });
+  if (isShipping) window.setTimeout(function () { initDeliveryMap(); if (deliveryMap) deliveryMap.invalidateSize(); }, 0);
+}
+document.querySelectorAll('input[name=tipo_entrega]').forEach(function (input) { input.addEventListener('change', updateDeliveryMethod); });
+document.getElementById('delivery-demo-location').addEventListener('click', function () { setDeliveryPoint(-34.6037, -58.3816); });
+updateDeliveryMethod();
+
 function mostrarMetodo(val) {
   document.querySelectorAll('.metodo-btn').forEach(b => b.classList.remove('activo'));
   document.getElementById('btn-' + val).classList.add('activo');
   document.getElementById('seccion-tarjeta').style.display = (val === 'transferencia') ? 'none' : 'block';
   document.getElementById('seccion-transferencia').style.display = (val === 'transferencia') ? 'block' : 'none';
 }
-
-function formatearTarjeta(input) {
-  let val = input.value.replace(/\D/g, '').substring(0, 16);
-  input.value = val.replace(/(.{4})/g, '$1 ').trim();
-  document.getElementById('prev-numero').textContent = input.value || '•••• •••• •••• ••••';
-}
-
-function formatearVencimiento(input) {
-  let val = input.value.replace(/\D/g, '').substring(0, 4);
-  if (val.length >= 2) val = val.substring(0,2) + '/' + val.substring(2);
-  input.value = val;
-  document.getElementById('prev-vence').textContent = val || 'MM/AA';
-}
-
-document.querySelector('[name=nombre_tarjeta]').addEventListener('input', function() {
-  document.getElementById('prev-nombre').textContent = this.value.toUpperCase() || 'TU NOMBRE';
-});
 
 function actualizarVerificacionPago() {
   var method = document.querySelector('input[name=verification_method]:checked');
@@ -202,10 +209,18 @@ document.querySelectorAll('input[name=verification_method]').forEach(function (i
   input.addEventListener('change', actualizarVerificacionPago);
 });
 actualizarVerificacionPago();
+
+document.getElementById('form-pago').addEventListener('submit', function () {
+  var button = document.getElementById('submit-payment');
+  button.disabled = true;
+  button.textContent = 'Preparando pedido…';
+});
 </script>
 
 {% endblock %}
 {% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDeliveryMap); else initDeliveryMap();</script>
 {% if has_face_credential %}
 <script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
 <script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-4" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>

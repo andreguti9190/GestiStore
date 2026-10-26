@@ -3,7 +3,11 @@ import json
 import math
 import secrets
 import hashlib
+import csv
+import threading
 from datetime import timedelta
+from decimal import Decimal
+from types import SimpleNamespace
 
 from django.conf import settings
 from django.contrib.auth import login
@@ -13,8 +17,10 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import IntegrityError, transaction
-from django.http import FileResponse, Http404, JsonResponse
+from django.core.paginator import Paginator
+from django.db import IntegrityError, close_old_connections, transaction
+from django.db.models import Q
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -39,7 +45,10 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from .models import CredencialFacial, CredencialPasskey, Producto, Venta, DetalleVenta, Perfil
+from .models import (
+    CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
+    Perfil, Producto, SolicitudDevolucion, Venta,
+)
 from .forms import LoginForm, ProductoForm, RegistroForm
 from .emails import (
     send_login_code,
@@ -47,6 +56,8 @@ from .emails import (
     send_purchase_receipt,
     send_registration_code,
 )
+from .realtime import get_dashboard_revision, publish_dashboard_event
+from .payments import process_demo_card, sync_payment_from_admin
 
 
 logger = logging.getLogger(__name__)
@@ -318,6 +329,48 @@ def _send_login_notice_safely(request, user, method):
         messages.warning(request, 'Ingresaste correctamente, pero no pudimos enviar el aviso de acceso por email.')
 
 
+def _send_login_notice_in_background(user_id, request_meta, method):
+    """Envía el aviso sin retener la respuesta que fija la cookie de sesión."""
+    close_old_connections()
+    try:
+        user = User.objects.get(pk=user_id)
+        send_login_notification(SimpleNamespace(META=request_meta), user, method)
+    except Exception:
+        logger.exception(
+            'No se pudo enviar en segundo plano el aviso de inicio de sesión al usuario %s',
+            user_id,
+        )
+    finally:
+        close_old_connections()
+
+
+def _queue_login_notice(request, user, method):
+    """Evita que geolocalización, mapas o SMTP demoren el login.
+
+    El backend de memoria usado por las pruebas se conserva síncrono para que
+    sus resultados sean deterministas. El SMTP real se ejecuta en un hilo
+    daemon con una copia mínima de los metadatos necesarios.
+    """
+    if settings.EMAIL_BACKEND != 'django.core.mail.backends.smtp.EmailBackend':
+        _send_login_notice_safely(request, user, method)
+        return
+
+    request_meta = {
+        key: request.META.get(key, '')
+        for key in ('HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR', 'HTTP_USER_AGENT')
+    }
+    worker = threading.Thread(
+        target=_send_login_notice_in_background,
+        args=(user.pk, request_meta, method),
+        name=f'login-notice-{user.pk}',
+        daemon=True,
+    )
+    try:
+        worker.start()
+    except RuntimeError:
+        logger.exception('No se pudo iniciar el envío del aviso de acceso')
+
+
 def _cart_fingerprint(cart):
     normalized = sorted(
         (str(item.get('producto_id', key)), int(item.get('cantidad', 0)))
@@ -434,7 +487,10 @@ def verificar_2fa(request):
             next_url = request.session.get('otp_next', reverse('inicio'))
             _clear_pending_otp(request)
             login(request, user, backend=backend)
-            _send_login_notice_safely(request, user, 'Contraseña y código por email')
+            # Guardamos la sesión antes de cualquier tarea de red. Si Gmail o
+            # la geolocalización demoran, la autenticación ya quedó persistida.
+            request.session.save()
+            _queue_login_notice(request, user, 'Contraseña y código por email')
             messages.success(request, 'Inicio de sesión confirmado.')
             return redirect(next_url)
 
@@ -480,6 +536,9 @@ def registro(request):
                     defaults={
                         'rol': 'operador',
                         'fecha_nacimiento': form.cleaned_data['fecha_nacimiento'],
+                        'responsable_nombre': form.cleaned_data.get('responsable_nombre', '').strip(),
+                        'responsable_dni': form.cleaned_data.get('responsable_dni', '').strip(),
+                        'responsable_parentesco': form.cleaned_data.get('responsable_parentesco', '').strip(),
                         'terminos_aceptados_en': timezone.now(),
                         'terminos_version': TERMS_VERSION,
                     },
@@ -590,7 +649,8 @@ def verificar_registro(request):
                 user.perfil.save(update_fields=['registro_verificado_en'])
             _clear_pending_registration_otp(request)
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            _send_login_notice_safely(request, user, 'Verificación de cuenta por email')
+            request.session.save()
+            _queue_login_notice(request, user, 'Verificación de cuenta por email')
             messages.success(request, 'Tu cuenta fue verificada y ya está lista para usar.')
             return redirect('inicio')
 
@@ -734,7 +794,8 @@ def login_facial(request):
     saved.ultimo_uso = timezone.now()
     saved.save(update_fields=['ultimo_uso'])
     login(request, saved.usuario, backend='django.contrib.auth.backends.ModelBackend')
-    _send_login_notice_safely(request, saved.usuario, 'Reconocimiento facial')
+    request.session.save()
+    _queue_login_notice(request, saved.usuario, 'Reconocimiento facial')
     return JsonResponse({'ok': True, 'redirect': next_url})
 
 
@@ -885,7 +946,8 @@ def passkey_login_verificar(request):
     saved.ultimo_uso = timezone.now()
     saved.save(update_fields=['sign_count', 'device_type', 'backed_up', 'ultimo_uso'])
     login(request, saved.usuario, backend='django.contrib.auth.backends.ModelBackend')
-    _send_login_notice_safely(request, saved.usuario, 'Face ID o passkey')
+    request.session.save()
+    _queue_login_notice(request, saved.usuario, 'Face ID o passkey')
     return JsonResponse({'ok': True, 'redirect': next_url})
 
 
@@ -1129,25 +1191,39 @@ def procesar_pago(request):
         return redirect('confirmar_compra')
 
     metodo = request.POST.get('metodo_pago', 'tarjeta')
+    if metodo not in {'tarjeta', 'debito', 'transferencia'}:
+        messages.error(request, 'El método de pago seleccionado no es válido.')
+        return redirect('confirmar_compra')
 
-    if metodo != 'transferencia':
-        numero = request.POST.get('numero_tarjeta', '').replace(' ', '')
-        nombre = request.POST.get('nombre_tarjeta', '')
-        vencimiento = request.POST.get('vencimiento', '')
-        cvv = request.POST.get('cvv', '')
+    tipo_entrega = request.POST.get('tipo_entrega', 'retiro')
+    if tipo_entrega not in dict(Venta.TIPO_ENTREGA_CHOICES):
+        messages.error(request, 'El tipo de entrega seleccionado no es válido.')
+        return redirect('confirmar_compra')
 
-        if len(numero) != 16 or not numero.isdigit():
-            messages.error(request, 'El número de tarjeta debe tener 16 dígitos.')
+    entrega = {
+        'direccion_entrega': '', 'entrega_localidad': '', 'entrega_provincia': '',
+        'entrega_codigo_postal': '', 'entrega_latitud': None, 'entrega_longitud': None,
+    }
+    if tipo_entrega == 'envio':
+        entrega['direccion_entrega'] = request.POST.get('direccion_entrega', '').strip()[:250]
+        entrega['entrega_localidad'] = request.POST.get('entrega_localidad', '').strip()[:100]
+        entrega['entrega_provincia'] = request.POST.get('entrega_provincia', '').strip()[:100]
+        entrega['entrega_codigo_postal'] = request.POST.get('entrega_codigo_postal', '').strip()[:12]
+        if not all((entrega['direccion_entrega'], entrega['entrega_localidad'],
+                    entrega['entrega_provincia'], entrega['entrega_codigo_postal'])):
+            messages.error(request, 'Completá la dirección, localidad, provincia y código postal.')
             return redirect('confirmar_compra')
-        if not nombre:
-            messages.error(request, 'Ingresá el nombre del titular.')
+        try:
+            latitude = Decimal(request.POST.get('entrega_latitud', ''))
+            longitude = Decimal(request.POST.get('entrega_longitud', ''))
+            if not (Decimal('-90') <= latitude <= Decimal('90')
+                    and Decimal('-180') <= longitude <= Decimal('180')):
+                raise ValueError
+        except (ValueError, ArithmeticError):
+            messages.error(request, 'Marcá en el mapa el punto aproximado de entrega.')
             return redirect('confirmar_compra')
-        if len(vencimiento) != 5:
-            messages.error(request, 'Ingresá una fecha de vencimiento válida (MM/AA).')
-            return redirect('confirmar_compra')
-        if len(cvv) not in [3, 4]:
-            messages.error(request, 'El CVV debe tener 3 o 4 dígitos.')
-            return redirect('confirmar_compra')
+        entrega['entrega_latitud'] = latitude
+        entrega['entrega_longitud'] = longitude
 
     # La venta y el descuento de stock se confirman como una sola operación.
     with transaction.atomic():
@@ -1168,7 +1244,15 @@ def procesar_pago(request):
             usuario=request.user,
             total=total,
             metodo_pago=metodo,
-            estado='completada',
+            estado='pendiente',
+            estado_pago='pendiente',
+            estado_envio='pendiente',
+            tipo_entrega=tipo_entrega,
+            **entrega,
+        )
+        payment = PagoSandbox.objects.create(
+            venta=venta,
+            proveedor='transferencia' if metodo == 'transferencia' else 'demopay',
         )
 
         for item in carrito.values():
@@ -1182,29 +1266,90 @@ def procesar_pago(request):
             producto.stock -= item['cantidad']
             producto.save(update_fields=['stock'])
 
+        transaction.on_commit(
+            lambda: publish_dashboard_event('sale.created', venta.pk)
+        )
+
     request.session['carrito'] = {}
     request.session.pop('purchase_face_auth', None)
     request.session['ultima_compra'] = venta.codigo
+    request.session['comprobante_enviado'] = None
 
-    receipt_sent = False
-    if request.user.email:
-        try:
-            receipt_sent = bool(send_purchase_receipt(venta))
-        except Exception:
-            logger.exception('No se pudo enviar el comprobante de la venta %s', venta.codigo)
-    request.session['comprobante_enviado'] = receipt_sent
-
+    if payment.proveedor == 'demopay':
+        return redirect('pago_sandbox', referencia=payment.referencia)
     return redirect('compra_exitosa')
+
+
+def _send_purchase_receipt_once(venta):
+    payment = PagoSandbox.objects.filter(venta=venta).first()
+    if payment and payment.comprobante_enviado_en:
+        return True
+    if not venta.usuario.email:
+        return False
+    try:
+        sent = bool(send_purchase_receipt(venta))
+    except Exception:
+        logger.exception('No se pudo enviar el comprobante de la venta %s', venta.codigo)
+        return False
+    if sent and payment:
+        payment.comprobante_enviado_en = timezone.now()
+        payment.save(update_fields=['comprobante_enviado_en', 'actualizado_en'])
+    return sent
+
+
+@login_required
+@never_cache
+def pago_sandbox(request, referencia):
+    payment = get_object_or_404(
+        PagoSandbox.objects.select_related('venta', 'venta__usuario'),
+        referencia=referencia,
+        venta__usuario=request.user,
+        proveedor='demopay',
+    )
+
+    if request.method == 'POST':
+        try:
+            payment, changed = process_demo_card(
+                referencia,
+                request.user,
+                request.POST.get('demo_token', ''),
+            )
+        except ValueError as error:
+            messages.error(request, str(error))
+            return redirect('pago_sandbox', referencia=referencia)
+
+        receipt_sent = None
+        if payment.estado == 'aprobado':
+            receipt_sent = _send_purchase_receipt_once(payment.venta)
+        request.session['ultima_compra'] = payment.venta.codigo
+        request.session['comprobante_enviado'] = receipt_sent
+        if changed and payment.estado == 'pendiente':
+            messages.info(request, 'El pago quedó pendiente de confirmación en el sandbox.')
+        return redirect('compra_exitosa')
+
+    if payment.estado in {'aprobado', 'rechazado', 'reembolsado'}:
+        request.session['ultima_compra'] = payment.venta.codigo
+        return redirect('compra_exitosa')
+    return render(request, 'tienda/pago_sandbox.html', {
+        'payment': payment,
+        'venta': payment.venta,
+    })
 
 
 @login_required
 def compra_exitosa(request):
     codigo = request.session.get('ultima_compra', '')
-    venta = Venta.objects.filter(codigo=codigo, usuario=request.user).select_related('usuario').first()
+    venta = (
+        Venta.objects.filter(codigo=codigo, usuario=request.user)
+        .select_related('usuario')
+        .first()
+    )
     detalles = venta.detalles.select_related('producto').all() if venta else []
+    payment = PagoSandbox.objects.filter(venta=venta).first() if venta else None
     return render(request, 'tienda/compra_exitosa.html', {
         'venta': venta,
         'detalles': detalles,
+        'payment': payment,
         'comprobante_enviado': request.session.pop('comprobante_enviado', None),
     })
 
@@ -1215,7 +1360,7 @@ def compra_exitosa(request):
 def reenviar_comprobante(request, pk):
     venta = get_object_or_404(
         Venta.objects.select_related('usuario'), pk=pk,
-        usuario=request.user, estado='completada',
+        usuario=request.user, estado='completada', estado_pago='pagado',
     )
     now = int(timezone.now().timestamp())
     last_sent = request.session.get('receipt_last_sent_at', 0)
@@ -1226,7 +1371,7 @@ def reenviar_comprobante(request, pk):
         messages.error(request, 'Tu cuenta no tiene un correo registrado. Contactá al administrador.')
         return redirect('mis_compras')
     try:
-        if not send_purchase_receipt(venta):
+        if not _send_purchase_receipt_once(venta):
             raise RuntimeError('No se pudo enviar el comprobante.')
     except Exception:
         logger.exception('No se pudo reenviar el comprobante de la venta %s', venta.codigo)
@@ -1241,29 +1386,349 @@ def reenviar_comprobante(request, pk):
 def mis_compras(request):
     if es_admin(request.user):
         return redirect('historial_ventas')
-    ventas = Venta.objects.filter(usuario=request.user, estado='completada')\
-        .prefetch_related('detalles__producto').order_by('-fecha_venta')
+    ventas = Venta.objects.filter(usuario=request.user)\
+        .select_related('devolucion').prefetch_related('detalles__producto').order_by('-fecha_venta')
     return render(request, 'tienda/mis_compras.html', {'ventas': ventas})
+
+
+@login_required
+@require_POST
+def solicitar_devolucion(request, pk):
+    venta = get_object_or_404(Venta, pk=pk, usuario=request.user)
+    if venta.estado_pago != 'pagado' or venta.estado_envio != 'entregado':
+        messages.error(request, 'La devolución se habilita cuando el pedido pagado figura como entregado.')
+        return redirect('mis_compras')
+    motivo = request.POST.get('motivo', '')
+    if motivo not in dict(SolicitudDevolucion.MOTIVO_CHOICES):
+        messages.error(request, 'Elegí un motivo de devolución válido.')
+        return redirect('mis_compras')
+    _return, created = SolicitudDevolucion.objects.get_or_create(
+        venta=venta,
+        defaults={
+            'motivo': motivo,
+            'detalle': request.POST.get('detalle', '').strip()[:600],
+        },
+    )
+    if created:
+        publish_dashboard_event('return.created', venta.pk)
+        messages.success(request, 'Recibimos tu solicitud de devolución. Podés seguirla desde esta pantalla.')
+    else:
+        messages.info(request, 'Este pedido ya tiene una solicitud de devolución.')
+    return redirect('mis_compras')
+
+
+@login_required
+@solo_admin
+@require_POST
+def resolver_devolucion(request, pk):
+    decision = request.POST.get('decision', '')
+    if decision not in {'aprobada', 'rechazada'}:
+        messages.error(request, 'La decisión seleccionada no es válida.')
+        return redirect('historial_ventas')
+    try:
+        with transaction.atomic():
+            devolucion = get_object_or_404(
+                SolicitudDevolucion.objects.select_for_update().select_related('venta'),
+                pk=pk,
+                estado='solicitada',
+            )
+            devolucion.estado = decision
+            devolucion.respuesta = request.POST.get('respuesta', '').strip()[:300]
+            devolucion.resuelta_en = timezone.now()
+            devolucion.save(update_fields=['estado', 'respuesta', 'resuelta_en', 'actualizada_en'])
+            venta = Venta.objects.select_for_update().get(pk=devolucion.venta_id)
+            if decision == 'aprobada':
+                sync_payment_from_admin(venta, 'reembolsado')
+                venta.estado_pago = 'reembolsado'
+                venta.estado = 'cancelada'
+                venta.estado_envio = 'cancelado'
+                venta.save(update_fields=['estado_pago', 'estado', 'estado_envio'])
+            sale_id = venta.pk
+            transaction.on_commit(lambda: publish_dashboard_event('return.updated', sale_id))
+    except Http404:
+        messages.error(request, 'La solicitud ya fue resuelta o no existe.')
+    else:
+        messages.success(request, f'Devolución {devolucion.get_estado_display().lower()}.')
+    return redirect('historial_ventas')
+
+
+@require_POST
+def asistente_consulta(request):
+    """Asistente determinístico: responde sólo intenciones conocidas y datos locales."""
+    intent = request.POST.get('intent', '').strip()
+    if intent == 'pagos':
+        answer = ('Podés pagar con tarjeta de crédito, débito o transferencia. '
+                  'En la demostración se usa DemoPay Sandbox y nunca se procesan tarjetas reales.')
+    elif intent == 'envios':
+        answer = ('Elegí envío a domicilio o retiro al finalizar la compra. '
+                  'El estado y el código de seguimiento aparecen en Mis compras.')
+    elif intent == 'devoluciones':
+        answer = ('Cuando un pedido pagado figure como entregado, podés solicitar su devolución '
+                  'desde Mis compras y seguir la respuesta del vendedor.')
+    elif intent == 'stock':
+        available = Producto.objects.filter(activo=True, stock__gt=0).count()
+        answer = f'Hay {available} productos con stock disponible en este momento.'
+    elif intent == 'mi_pedido':
+        if not request.user.is_authenticated:
+            answer = 'Iniciá sesión para consultar el estado de tu último pedido.'
+        else:
+            sale = Venta.objects.filter(usuario=request.user).order_by('-fecha_venta').first()
+            answer = (f'Tu último pedido {sale.codigo} tiene pago {sale.get_estado_pago_display().lower()} '
+                      f'y envío {sale.get_estado_envio_display().lower()}.' if sale
+                      else 'Todavía no registramos compras en tu cuenta.')
+    else:
+        return JsonResponse({'error': 'Elegí una de las consultas disponibles.'}, status=400)
+    return JsonResponse({'answer': answer})
 
 
 # ─── HISTORIAL DE VENTAS (ADMIN) ──────────────────────────
 @login_required
 @solo_admin
 def historial_ventas(request):
-    ventas = Venta.objects.filter(estado='completada')\
-        .select_related('usuario')\
-        .prefetch_related('detalles__producto')\
-        .order_by('usuario__username', '-fecha_venta')
+    if request.method == 'POST':
+        estado_pago = request.POST.get('estado_pago')
+        estado_envio = request.POST.get('estado_envio')
+        transportista = request.POST.get('transportista', '').strip()[:80]
+        tracking = request.POST.get('tracking', '').strip()[:80]
+        if estado_pago not in dict(Venta.ESTADO_PAGO_CHOICES):
+            messages.error(request, 'El estado de pago seleccionado no es válido.')
+        elif estado_envio not in dict(Venta.ESTADO_ENVIO_CHOICES):
+            messages.error(request, 'El estado de envío seleccionado no es válido.')
+        else:
+            try:
+                with transaction.atomic():
+                    venta = get_object_or_404(
+                        Venta.objects.select_for_update(),
+                        pk=request.POST.get('venta_id'),
+                    )
+                    was_paid = venta.estado_pago == 'pagado'
+                    if estado_envio == 'cancelado' and estado_pago in {'pendiente', 'procesando'}:
+                        estado_pago = 'rechazado'
+                    venta.estado_pago = estado_pago
+                    venta.estado_envio = estado_envio
+                    venta.transportista = transportista
+                    venta.tracking = tracking
+                    if estado_envio == 'cancelado' or estado_pago in {'rechazado', 'reembolsado'}:
+                        venta.estado = 'cancelada'
+                    elif estado_pago == 'pagado':
+                        venta.estado = 'completada'
+                    else:
+                        venta.estado = 'pendiente'
+                    sync_payment_from_admin(venta, estado_pago)
+                    venta.save(update_fields=[
+                        'estado_pago', 'estado_envio', 'estado', 'transportista', 'tracking',
+                    ])
+                    sale_id = venta.pk
+                    transaction.on_commit(
+                        lambda: publish_dashboard_event('sale.updated', sale_id)
+                    )
+            except ValueError as error:
+                messages.error(request, str(error))
+            else:
+                if estado_pago == 'pagado' and not was_paid:
+                    _send_purchase_receipt_once(venta)
+                messages.success(request, f'Pedido {venta.codigo} actualizado correctamente.')
+        query = request.POST.get('return_query', '')
+        return redirect(f"{reverse('historial_ventas')}?{query}" if query else 'historial_ventas')
 
-    grupos = []
-    indice = {}
+    now = timezone.now()
+    period = request.GET.get('periodo', '30d')
+    period_days = {'hoy': 1, '7d': 7, '30d': 30, '90d': 90}
+    if period == 'personalizado':
+        try:
+            start_date = timezone.datetime.strptime(request.GET.get('desde', ''), '%Y-%m-%d').date()
+            end_date = timezone.datetime.strptime(request.GET.get('hasta', ''), '%Y-%m-%d').date()
+            if end_date < start_date:
+                raise ValueError
+        except ValueError:
+            period = '30d'
+            start_date = timezone.localdate(now) - timedelta(days=29)
+            end_date = timezone.localdate(now)
+            messages.warning(request, 'El rango de fechas no era válido. Mostramos los últimos 30 días.')
+    elif period == 'todo':
+        oldest = Venta.objects.order_by('fecha_venta').values_list('fecha_venta', flat=True).first()
+        start_date = timezone.localdate(oldest) if oldest else timezone.localdate(now)
+        end_date = timezone.localdate(now)
+    else:
+        days = period_days.get(period, 30)
+        period = period if period in period_days else '30d'
+        end_date = timezone.localdate(now)
+        start_date = end_date - timedelta(days=days - 1)
+
+    start = timezone.make_aware(timezone.datetime.combine(start_date, timezone.datetime.min.time()))
+    end = timezone.make_aware(timezone.datetime.combine(end_date + timedelta(days=1), timezone.datetime.min.time()))
+    duration = end - start
+    previous_start, previous_end = start - duration, start
+
+    base = Venta.objects.select_related(
+        'usuario', 'pago_sandbox', 'devolucion',
+    ).prefetch_related('detalles__producto')
+    current = list(base.filter(fecha_venta__gte=start, fecha_venta__lt=end).order_by('-fecha_venta'))
+    previous = list(base.filter(fecha_venta__gte=previous_start, fecha_venta__lt=previous_end))
+
+    def metrics(rows):
+        paid = [sale for sale in rows if sale.estado == 'completada' and sale.estado_pago == 'pagado']
+        total = sum((sale.total for sale in paid), Decimal('0'))
+        profit = Decimal('0')
+        for sale in paid:
+            for detail in sale.detalles.all():
+                cost = detail.producto.costo
+                if cost is None:
+                    cost = detail.precio_unitario * Decimal('0.70')
+                profit += (detail.precio_unitario - cost) * detail.cantidad
+        return {'sales': total, 'profit': profit, 'orders': len(rows),
+                'ticket': total / len(paid) if paid else Decimal('0')}
+
+    current_metrics, previous_metrics = metrics(current), metrics(previous)
+
+    def variation(value, old):
+        if old == 0:
+            return 100 if value else 0
+        return round(float((value - old) / old * 100), 1)
+
+    metric_cards = [
+        {'key': 'sales', 'label': 'Ventas totales', 'value': current_metrics['sales'], 'money': True,
+         'variation': variation(current_metrics['sales'], previous_metrics['sales'])},
+        {'key': 'profit', 'label': 'Ganancia estimada', 'value': current_metrics['profit'], 'money': True,
+         'variation': variation(current_metrics['profit'], previous_metrics['profit'])},
+        {'key': 'orders', 'label': 'Pedidos recibidos', 'value': current_metrics['orders'], 'money': False,
+         'variation': variation(current_metrics['orders'], previous_metrics['orders'])},
+        {'key': 'ticket', 'label': 'Ticket promedio', 'value': current_metrics['ticket'], 'money': True,
+         'variation': variation(current_metrics['ticket'], previous_metrics['ticket'])},
+    ]
+
+    span_days = max((end_date - start_date).days + 1, 1)
+    bucket = max(1, math.ceil(span_days / 15))
+    sales_series = []
+    cursor = start_date
+    while cursor <= end_date:
+        bucket_end = min(cursor + timedelta(days=bucket - 1), end_date)
+        amount = sum((sale.total for sale in current
+                      if sale.estado == 'completada' and sale.estado_pago == 'pagado'
+                      and cursor <= timezone.localdate(sale.fecha_venta) <= bucket_end), Decimal('0'))
+        label = cursor.strftime('%d/%m') if bucket == 1 else f"{cursor.strftime('%d/%m')}–{bucket_end.strftime('%d/%m')}"
+        sales_series.append({'label': label, 'value': float(amount)})
+        cursor = bucket_end + timedelta(days=1)
+
+    shipping_counts = {key: 0 for key, _ in Venta.ESTADO_ENVIO_CHOICES}
+    for sale in current:
+        shipping_counts[sale.estado_envio] += 1
+    shipping_chart = [
+        {'key': key, 'label': label, 'value': shipping_counts[key]}
+        for key, label in Venta.ESTADO_ENVIO_CHOICES
+    ]
+    shipping_map = [
+        {
+            'id': sale.pk,
+            'codigo': sale.codigo,
+            'cliente': sale.usuario.get_full_name() or sale.usuario.username,
+            'estado': sale.get_estado_envio_display(),
+            'estado_key': sale.estado_envio,
+            'direccion': ', '.join(filter(None, [
+                sale.direccion_entrega, sale.entrega_localidad, sale.entrega_provincia,
+            ])),
+            'lat': float(sale.entrega_latitud),
+            'lng': float(sale.entrega_longitud),
+            'tracking': sale.tracking,
+            'transportista': sale.transportista,
+        }
+        for sale in current
+        if sale.tipo_entrega == 'envio'
+        and sale.entrega_latitud is not None and sale.entrega_longitud is not None
+        and sale.estado_envio != 'cancelado'
+    ]
+
+    product_totals, category_totals = {}, {}
+    for sale in current:
+        if sale.estado != 'completada' or sale.estado_pago != 'pagado':
+            continue
+        for detail in sale.detalles.all():
+            item = product_totals.setdefault(detail.producto_id, {
+                'producto': detail.producto, 'units': 0, 'revenue': Decimal('0')})
+            item['units'] += detail.cantidad
+            item['revenue'] += detail.subtotal
+            category = detail.producto.get_categoria_display()
+            category_totals[category] = category_totals.get(category, Decimal('0')) + detail.subtotal
+    top_products = sorted(product_totals.values(), key=lambda item: item['revenue'], reverse=True)[:5]
+    category_chart = [
+        {'label': label, 'value': float(value)}
+        for label, value in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:6]
+    ]
+
+    query = request.GET.get('q', '').strip()
+    shipping_filter = request.GET.get('envio', '')
+    payment_filter = request.GET.get('pago', '')
+    sort = request.GET.get('orden', '-fecha')
+    filtered = base.filter(fecha_venta__gte=start, fecha_venta__lt=end)
+    if query:
+        filtered = filtered.filter(
+            Q(codigo__icontains=query) | Q(usuario__username__icontains=query)
+            | Q(usuario__email__icontains=query) | Q(detalles__producto__nombre__icontains=query)
+            | Q(detalles__producto__sku__icontains=query)
+        ).distinct()
+    if shipping_filter in dict(Venta.ESTADO_ENVIO_CHOICES):
+        filtered = filtered.filter(estado_envio=shipping_filter)
+    if payment_filter in dict(Venta.ESTADO_PAGO_CHOICES):
+        filtered = filtered.filter(estado_pago=payment_filter)
+    sort_map = {'-fecha': '-fecha_venta', 'fecha': 'fecha_venta', '-total': '-total',
+                'total': 'total', 'cliente': 'usuario__username', '-cliente': '-usuario__username'}
+    filtered = filtered.order_by(sort_map.get(sort, '-fecha_venta'))
+    page_obj = Paginator(filtered, 8).get_page(request.GET.get('page'))
+
+    inventory_alerts = list(Producto.objects.filter(activo=True, stock__lte=5).order_by('stock', 'nombre')[:6])
+    total_products = Producto.objects.filter(activo=True).count()
+    out_of_stock = Producto.objects.filter(activo=True, stock=0).count()
+    active_customers = len({sale.usuario_id for sale in current})
+    pending_returns = list(
+        SolicitudDevolucion.objects.select_related('venta', 'venta__usuario')
+        .filter(estado='solicitada').order_by('-creada_en')
+    )
+    recent_activity = []
+    for sale in current[:5]:
+        recent_activity.append({
+            'kind': 'order', 'title': f'Pedido {sale.codigo}',
+            'text': f'{sale.usuario.get_full_name() or sale.usuario.username} · {sale.get_estado_envio_display()}',
+            'date': sale.fecha_venta,
+        })
+    for product in inventory_alerts[:3]:
+        recent_activity.append({
+            'kind': 'stock', 'title': 'Alerta de inventario',
+            'text': f'{product.nombre}: {product.stock} unidades', 'date': product.fecha_creacion,
+        })
+    recent_activity.sort(key=lambda item: item['date'], reverse=True)
+
+    params = request.GET.copy()
+    params.pop('page', None)
+    return render(request, 'tienda/dashboard_vendedor.html', {
+        'metric_cards': metric_cards, 'sales_series': sales_series,
+        'shipping_chart': shipping_chart, 'shipping_map': shipping_map,
+        'category_chart': category_chart,
+        'top_products': top_products, 'inventory_alerts': inventory_alerts,
+        'page_obj': page_obj, 'period': period, 'start_date': start_date,
+        'end_date': end_date, 'shipping_choices': Venta.ESTADO_ENVIO_CHOICES,
+        'payment_choices': Venta.ESTADO_PAGO_CHOICES, 'query_without_page': params.urlencode(),
+        'total_products': total_products, 'out_of_stock': out_of_stock,
+        'active_customers': active_customers, 'recent_activity': recent_activity,
+        'pending_returns': pending_returns,
+        'has_estimated_costs': Producto.objects.filter(costo__isnull=True).exists(),
+        'dashboard_revision': get_dashboard_revision(),
+    })
+
+
+@login_required
+@solo_admin
+def exportar_ventas_csv(request):
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="reporte-ventas-amperestore.csv"'
+    response.write('\ufeff')
+    writer = csv.writer(response)
+    writer.writerow(['Pedido', 'Fecha', 'Cliente', 'Email', 'Total', 'Pago', 'Envío', 'Método'])
+    ventas = Venta.objects.select_related('usuario').order_by('-fecha_venta')
     for venta in ventas:
-        grupo = indice.get(venta.usuario_id)
-        if grupo is None:
-            grupo = {'usuario': venta.usuario, 'ventas': [], 'total': 0}
-            indice[venta.usuario_id] = grupo
-            grupos.append(grupo)
-        grupo['ventas'].append(venta)
-        grupo['total'] += venta.total
-
-    return render(request, 'tienda/historial_ventas.html', {'grupos': grupos})
+        writer.writerow([
+            venta.codigo, timezone.localtime(venta.fecha_venta).strftime('%d/%m/%Y %H:%M'),
+            venta.usuario.get_full_name() or venta.usuario.username, venta.usuario.email,
+            venta.total, venta.get_estado_pago_display(), venta.get_estado_envio_display(),
+            venta.get_metodo_pago_display(),
+        ])
+    return response

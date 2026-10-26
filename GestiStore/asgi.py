@@ -16,7 +16,7 @@ from django.views.static import serve as serve_media
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'GestiStore.settings')
 
-application = get_asgi_application()
+django_application = get_asgi_application()
 
 
 class ASGIMediaFilesHandler(ASGIStaticFilesHandler):
@@ -36,7 +36,20 @@ class ASGIMediaFilesHandler(ASGIStaticFilesHandler):
 # Uvicorn no incluye el servidor de archivos estáticos de ``runserver``.
 # Lo agregamos solamente para esta demo cuando DEBUG está habilitado.
 if settings.DEBUG or os.getenv('SERVE_STATIC_FILES', '').lower() == 'true':
-    application = ASGIStaticFilesHandler(application)
+    django_application = ASGIStaticFilesHandler(django_application)
 
 if settings.SERVE_MEDIA_FILES:
-    application = ASGIMediaFilesHandler(application)
+    django_application = ASGIMediaFilesHandler(django_application)
+
+
+from Tienda.realtime import dashboard_websocket  # noqa: E402
+
+
+async def application(scope, receive, send):
+    if scope['type'] == 'websocket':
+        if scope.get('path') == '/ws/ventas/':
+            await dashboard_websocket(scope, receive, send)
+        else:
+            await send({'type': 'websocket.close', 'code': 4404})
+        return
+    await django_application(scope, receive, send)

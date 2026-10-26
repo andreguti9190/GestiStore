@@ -5,10 +5,21 @@
 
 <div class="exito-box">
   <div class="exito-icon">
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    {% if venta.estado_pago == 'pagado' %}<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>{% elif venta.estado_pago == 'rechazado' %}×{% else %}⌛{% endif %}
   </div>
-  <h1>¡Compra realizada con éxito!</h1>
-  <p>Tu pedido fue procesado. Guardá tu código de compra.</p>
+  {% if venta.estado_pago == 'pagado' %}
+  <h1>¡Pago aprobado!</h1>
+  <p>Tu compra quedó confirmada. Guardá el código del pedido.</p>
+  {% elif venta.estado_pago == 'rechazado' %}
+  <h1>El pago fue rechazado</h1>
+  <p>La pasarela de demostración rechazó la operación y el stock fue liberado.</p>
+  {% elif venta.metodo_pago == 'transferencia' %}
+  <h1>Pedido recibido</h1>
+  <p>La transferencia todavía está pendiente de acreditación y debe ser confirmada por el vendedor.</p>
+  {% else %}
+  <h1>Pago en proceso</h1>
+  <p>La entidad de prueba todavía está procesando la operación.</p>
+  {% endif %}
 
   {% if comprobante_enviado is True %}
   <div class="messages" style="margin-bottom:18px"><div class="success">Te enviamos el comprobante a {{ request.user.email }}.</div></div>
@@ -17,17 +28,28 @@
   {% endif %}
 
   {% if venta %}
-  <form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
+  {% if venta.estado_pago == 'pagado' %}<form method="post" action="{% url 'reenviar_comprobante' venta.pk %}">
     {% csrf_token %}
     <button type="submit" class="btn btn-secondary">Reenviar comprobante por email</button>
-  </form>
+  </form>{% endif %}
   <div class="exito-venta">
     <div class="exito-codigo">{{ venta.codigo }}</div>
     <div class="exito-detalles">
       <div><span>Fecha</span> <strong>{{ venta.fecha_venta|date:"d/m/Y H:i" }}</strong></div>
       <div><span>Total</span> <strong>${{ venta.total }}</strong></div>
       <div><span>Método de pago</span> <strong>{{ venta.get_metodo_pago_display }}</strong></div>
+      <div><span>Estado del pago</span> <strong>{{ venta.get_estado_pago_display }}</strong></div>
+      {% if payment.marca_tarjeta %}<div><span>Red detectada</span> <strong>{{ payment.marca_tarjeta }} ···· {{ payment.ultimos_cuatro }}</strong></div>{% endif %}
     </div>
+
+    {% if venta.metodo_pago == 'transferencia' and venta.estado_pago != 'pagado' %}
+    <div class="transferencia-box">
+      <h3>Datos de transferencia de demostración</h3>
+      <p><strong>Alias:</strong> GESTISTORE.PAGOS</p>
+      <p><strong>Referencia:</strong> {{ payment.referencia }}</p>
+      <div class="transferencia-nota">El administrador debe comprobar la acreditación y marcar el pedido como pagado desde el panel vendedor.</div>
+    </div>
+    {% elif payment.motivo %}<div class="transferencia-box"><strong>Detalle:</strong> {{ payment.motivo }}</div>{% endif %}
 
     <h2>Productos comprados</h2>
     <div class="exito-items">

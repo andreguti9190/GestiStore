@@ -1,0 +1,115 @@
+{% extends 'tienda/base.html' %}
+{% load static %}
+{% block title %} - DemoPay Sandbox{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'tienda/css/pago.css' %}">
+
+<div class="gateway-shell">
+  <header class="gateway-header">
+    <div class="gateway-logo"><span>⚡</span><div><strong>DemoPay</strong><small>SANDBOX</small></div></div>
+    <div class="gateway-secure">🔒 Pago de demostración seguro</div>
+  </header>
+
+  <div class="gateway-grid">
+    <section class="gateway-card">
+      <span class="sandbox-pill">MODO PRUEBA · NO MUEVE DINERO REAL</span>
+      <h1>Completá el pago de prueba</h1>
+      <p class="gateway-lead">Usá una de las tarjetas ficticias disponibles. Los datos se procesan en el navegador y AmpereStore recibe únicamente un token de demostración.</p>
+
+      <form method="post" id="sandbox-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="demo_token" id="demo-token">
+        <div class="gateway-field">
+          <label for="sandbox-card">Número de tarjeta de prueba</label>
+          <div class="card-input-wrap"><input id="sandbox-card" inputmode="numeric" autocomplete="off" maxlength="19" placeholder="0000 0000 0000 0000" required><strong id="detected-brand">—</strong></div>
+        </div>
+        <div class="gateway-field">
+          <label for="sandbox-holder">Titular</label>
+          <input id="sandbox-holder" autocomplete="off" placeholder="NOMBRE DE PRUEBA" required>
+        </div>
+        <div class="gateway-row">
+          <div class="gateway-field"><label for="sandbox-expiry">Vencimiento</label><input id="sandbox-expiry" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="MM/AA" required></div>
+          <div class="gateway-field"><label for="sandbox-cvv">Código de seguridad</label><input id="sandbox-cvv" type="password" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="123" required></div>
+        </div>
+        <div class="gateway-error" id="gateway-error" role="alert" hidden></div>
+        <button class="btn-pago" type="submit" id="sandbox-submit">Pagar ${{ venta.total }} en DemoPay</button>
+      </form>
+    </section>
+
+    <aside class="gateway-summary">
+      <span class="gateway-order-label">PEDIDO</span>
+      <strong>{{ venta.codigo }}</strong>
+      <div class="gateway-amount"><span>Total</span><b>${{ venta.total }}</b></div>
+      <p>Elegí una tarjeta para simular el resultado:</p>
+      <div class="test-cards">
+        <button type="button" data-card="4111111111111111" data-cvv="123"><span class="test-status approved">Aprobado</span><strong>Visa</strong><code>4111 1111 1111 1111</code></button>
+        <button type="button" data-card="5555555555554444" data-cvv="123"><span class="test-status approved">Aprobado</span><strong>Mastercard</strong><code>5555 5555 5555 4444</code></button>
+        <button type="button" data-card="378282246310005" data-cvv="1234"><span class="test-status approved">Aprobado</span><strong>American Express</strong><code>3782 822463 10005</code></button>
+        <button type="button" data-card="4000000000000002" data-cvv="123"><span class="test-status pending">Pendiente</span><strong>Visa</strong><code>4000 0000 0000 0002</code></button>
+        <button type="button" data-card="5105105105105100" data-cvv="123"><span class="test-status rejected">Rechazado</span><strong>Mastercard</strong><code>5105 1051 0510 5100</code></button>
+      </div>
+      <small class="gateway-disclaimer">No ingreses tarjetas reales. Este entorno sólo acepta los números de prueba listados.</small>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var scenarios = {
+    '4111111111111111': ['demo_visa_approved', 'Visa'],
+    '5555555555554444': ['demo_mastercard_approved', 'Mastercard'],
+    '378282246310005': ['demo_amex_approved', 'American Express'],
+    '4000000000000002': ['demo_visa_pending', 'Visa'],
+    '5105105105105100': ['demo_mastercard_rejected', 'Mastercard']
+  };
+  var card = document.getElementById('sandbox-card');
+  var brand = document.getElementById('detected-brand');
+  var error = document.getElementById('gateway-error');
+  var expiry = document.getElementById('sandbox-expiry');
+  var cvv = document.getElementById('sandbox-cvv');
+
+  function digits(value) { return value.replace(/\D/g, ''); }
+  function updateCard() {
+    var number = digits(card.value).substring(0, 16);
+    card.value = number.replace(/(.{4})/g, '$1 ').trim();
+    brand.textContent = scenarios[number] ? scenarios[number][1] : '—';
+  }
+  card.addEventListener('input', updateCard);
+  expiry.addEventListener('input', function () {
+    var value = digits(expiry.value).substring(0, 4);
+    expiry.value = value.length > 2 ? value.slice(0, 2) + '/' + value.slice(2) : value;
+  });
+  cvv.addEventListener('input', function () { cvv.value = digits(cvv.value).substring(0, 4); });
+
+  document.querySelectorAll('[data-card]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      card.value = button.dataset.card;
+      document.getElementById('sandbox-holder').value = 'CLIENTE DEMO';
+      expiry.value = '12/30';
+      cvv.value = button.dataset.cvv;
+      updateCard();
+      card.focus();
+    });
+  });
+
+  document.getElementById('sandbox-form').addEventListener('submit', function (event) {
+    var number = digits(card.value);
+    var scenario = scenarios[number];
+    if (!scenario || !document.getElementById('sandbox-holder').value.trim() || expiry.value.length !== 5 || cvv.value.length < 3) {
+      event.preventDefault();
+      error.textContent = scenario ? 'Completá todos los datos de prueba.' : 'Usá una de las tarjetas de demostración listadas.';
+      error.hidden = false;
+      return;
+    }
+    error.hidden = true;
+    document.getElementById('demo-token').value = scenario[0];
+    card.value = '';
+    cvv.value = '';
+    var submit = document.getElementById('sandbox-submit');
+    submit.disabled = true;
+    submit.textContent = 'Procesando en DemoPay…';
+  });
+})();
+</script>
+{% endblock %}

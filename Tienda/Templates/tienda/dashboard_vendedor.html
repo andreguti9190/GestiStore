@@ -1,0 +1,162 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Panel vendedor · AmpereStore</title>
+  <link rel="icon" type="image/png" href="{% static 'tienda/images/ampere-isotipo-azul.png' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261026-2">
+</head>
+<body data-websocket-url="/ws/ventas/" data-live-revision="{{ dashboard_revision }}">
+<div class="dashboard-shell">
+  <aside class="seller-sidebar" id="seller-sidebar">
+    <div class="sidebar-brand">
+      <span class="sidebar-logo"><img src="{% static 'tienda/images/ampere-isotipo-blanco.png' %}" alt=""></span>
+      <span><strong>AmpereStore</strong><small>Panel vendedor</small></span>
+      <button class="sidebar-close icon-button" type="button" id="sidebar-close" aria-label="Cerrar menú">×</button>
+    </div>
+    <nav class="seller-nav" aria-label="Navegación del panel">
+      <span class="nav-caption">GESTIÓN</span>
+      <a href="#resumen" class="active" data-section="resumen"><span class="nav-icon">⌂</span>Inicio</a>
+      <a href="#ventas" data-section="ventas"><span class="nav-icon">↗</span>Ventas</a>
+      <a href="#pedidos" data-section="pedidos"><span class="nav-icon">▣</span>Pedidos <span class="nav-badge">{{ page_obj.paginator.count }}</span></a>
+      <a href="#envios" data-section="envios"><span class="nav-icon">⌖</span>Envíos</a>
+      <a href="#devoluciones" data-section="devoluciones"><span class="nav-icon">↩</span>Devoluciones{% if pending_returns %} <span class="nav-badge">{{ pending_returns|length }}</span>{% endif %}</a>
+      <a href="{% url 'lista_productos' %}"><span class="nav-icon">◇</span>Productos</a>
+      <a href="#clientes" data-section="clientes"><span class="nav-icon">♙</span>Clientes</a>
+      <span class="nav-caption">CRECIMIENTO</span>
+      <a href="#analiticas" data-section="analiticas"><span class="nav-icon">⌁</span>Analíticas</a>
+      <a href="#" data-coming-soon="Promociones"><span class="nav-icon">%</span>Promociones</a>
+      <a href="#finanzas" data-section="finanzas"><span class="nav-icon">$</span>Finanzas</a>
+      <a href="{% url 'seguridad_cuenta' %}"><span class="nav-icon">⚙</span>Configuración</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="store-health"><span class="health-dot"></span><div><strong>Tienda operativa</strong><small>Datos sincronizados</small></div></div>
+      <div class="seller-profile">
+        <div class="profile-avatar">{{ user.username|slice:':1'|upper }}</div>
+        <div class="profile-copy"><strong>{{ user.get_full_name|default:user.username }}</strong><small>Administrador</small></div>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" aria-label="Cerrar sesión" title="Cerrar sesión">↪</button></form>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+  <main class="seller-main">
+    <header class="dashboard-topbar">
+      <button class="mobile-menu-button icon-button" id="sidebar-open" type="button" aria-label="Abrir menú">☰</button>
+      <form method="get" class="global-search" role="search">
+        <input type="hidden" name="periodo" value="{{ period }}"><span aria-hidden="true">⌕</span>
+        <input name="q" value="{{ request.GET.q }}" placeholder="Buscar pedido, cliente o producto…" aria-label="Buscar"><kbd>⌘ K</kbd>
+      </form>
+      <div class="topbar-actions">
+        <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="Cambiar tema"><span class="theme-icon">☾</span></button>
+        <button class="icon-button notification-button" id="notification-button" type="button" aria-label="Notificaciones" aria-expanded="false">♢<span class="notification-dot"></span></button>
+        <a href="{% url 'crear_producto' %}" class="primary-button"><span>＋</span> Agregar producto</a>
+      </div>
+      <div class="notification-panel" id="notification-panel" hidden>
+        <div class="panel-heading"><div><strong>Notificaciones</strong><small id="notification-count">3 sin leer</small></div><button id="mark-read" type="button">Marcar leídas</button></div>
+        {% for activity in recent_activity|slice:':3' %}<div class="notification-item unread"><span class="activity-symbol {{ activity.kind }}">{% if activity.kind == 'stock' %}!{% else %}✓{% endif %}</span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p><time>{{ activity.date|timesince }} atrás</time></div></div>{% empty %}<div class="empty-mini">No hay notificaciones nuevas.</div>{% endfor %}
+      </div>
+    </header>
+
+    <div class="dashboard-content">
+      {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}"><span>{{ message }}</span><button type="button" aria-label="Cerrar">×</button></div>{% endfor %}</div>{% endif %}
+
+      <section class="welcome-row" id="resumen">
+        <div><span class="eyebrow">RESUMEN DEL NEGOCIO</span><h1>¡Buen día, {{ user.first_name|default:user.username }}!</h1><p>Este es el resumen de tu tienda. Los datos se actualizan con cada venta.</p></div>
+        <div class="header-controls">
+          <div class="store-selector"><span class="store-avatar">A</span><div><small>Tienda activa</small><strong>AmpereStore</strong></div><span>⌄</span></div>
+          <form method="get" class="period-control" id="period-form">
+            {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+            <select name="periodo" id="period-select" aria-label="Seleccionar período">
+              <option value="hoy"{% if period == 'hoy' %} selected{% endif %}>Hoy</option><option value="7d"{% if period == '7d' %} selected{% endif %}>Últimos 7 días</option><option value="30d"{% if period == '30d' %} selected{% endif %}>Últimos 30 días</option><option value="90d"{% if period == '90d' %} selected{% endif %}>Últimos 90 días</option><option value="todo"{% if period == 'todo' %} selected{% endif %}>Todo el historial</option><option value="personalizado"{% if period == 'personalizado' %} selected{% endif %}>Rango personalizado</option>
+            </select>
+            <div class="custom-dates"{% if period != 'personalizado' %} hidden{% endif %}><input type="date" name="desde" value="{{ start_date|date:'Y-m-d' }}" aria-label="Desde"><input type="date" name="hasta" value="{{ end_date|date:'Y-m-d' }}" aria-label="Hasta"><button type="submit">Aplicar</button></div>
+          </form>
+        </div>
+      </section>
+
+      <div class="data-notice"><span>●</span> Datos reales de la base local · Período: {{ start_date|date:'d M' }} — {{ end_date|date:'d M Y' }}{% if has_estimated_costs %} · Las ganancias usan un costo estimado del 70% cuando falta ese dato{% endif %}<span class="live-sync" id="live-sync"><i></i> Actualización automática</span></div>
+
+      <section class="metrics-grid" aria-label="Métricas principales">
+        {% for metric in metric_cards %}<article class="metric-card metric-{{ metric.key }}">
+          <div class="metric-head"><span class="metric-icon">{% if metric.key == 'sales' %}$↗{% elif metric.key == 'profit' %}◎{% elif metric.key == 'orders' %}▣{% else %}◇{% endif %}</span><span class="metric-menu">•••</span></div>
+          <span class="metric-label">{{ metric.label }}</span><div class="metric-value">{% if metric.money %}<small>$</small>{% endif %}{{ metric.value|floatformat:0 }}</div>
+          <div class="metric-foot"><span class="variation {% if metric.variation >= 0 %}positive{% else %}negative{% endif %}">{% if metric.variation >= 0 %}↗{% else %}↘{% endif %} {{ metric.variation }}%</span><span>vs. período anterior</span></div>
+          <svg class="sparkline" viewBox="0 0 120 35" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area" d="M0 31 C18 27,21 19,37 23 S57 30,70 16 S92 12,120 3 L120 35 L0 35Z"/><path class="spark-line" d="M0 31 C18 27,21 19,37 23 S57 30,70 16 S92 12,120 3"/></svg>
+        </article>{% endfor %}
+      </section>
+
+      <section class="analytics-grid" id="analiticas">
+        <article class="panel sales-chart-panel" id="ventas"><div class="panel-heading"><div><span class="panel-kicker">INGRESOS</span><h2>Evolución de ventas</h2><p>Facturación de pedidos pagados</p></div><div class="chart-total"><small>Total del período</small><strong>${{ metric_cards.0.value|floatformat:0 }}</strong></div></div><div class="chart-wrap"><canvas id="sales-chart" aria-label="Gráfico de evolución de ventas"></canvas><div class="chart-empty" hidden>No hay ventas en este período.</div></div></article>
+        <article class="panel order-status-panel"><div class="panel-heading"><div><span class="panel-kicker">OPERACIONES</span><h2>Estado de pedidos</h2><p>{{ metric_cards.2.value }} pedidos en el período</p></div></div><div class="donut-layout"><div class="donut-wrap"><canvas id="orders-chart" aria-label="Gráfico de estado de pedidos"></canvas><div class="donut-center"><strong>{{ metric_cards.2.value }}</strong><span>Total</span></div></div><div class="chart-legend" id="orders-legend"></div></div></article>
+      </section>
+
+      <section class="insights-grid">
+        <article class="panel products-panel"><div class="panel-heading"><div><span class="panel-kicker">CATÁLOGO</span><h2>Productos más vendidos</h2><p>Ordenados por ingresos generados</p></div><a href="{% url 'lista_productos' %}">Ver catálogo →</a></div><div class="product-ranking">
+          {% for item in top_products %}<div class="rank-row"><span class="rank-number">{{ forloop.counter|stringformat:'02d' }}</span><div class="rank-image">{% if item.producto.imagen %}<img src="{{ item.producto.imagen.url }}" alt="">{% else %}<span>◇</span>{% endif %}</div><div class="rank-name"><strong>{{ item.producto.nombre }}</strong><small>{{ item.producto.get_categoria_display }}</small></div><div class="rank-units"><strong>{{ item.units }}</strong><small>unidades</small></div><div class="rank-revenue"><strong>${{ item.revenue|floatformat:0 }}</strong><small>ingresos</small></div></div>{% empty %}<div class="empty-state compact"><span>◇</span><strong>Sin ventas todavía</strong><p>El ranking aparecerá cuando entren pedidos.</p></div>{% endfor %}
+        </div></article>
+        <article class="panel inventory-panel"><div class="panel-heading"><div><span class="panel-kicker warning">INVENTARIO</span><h2>Alertas de stock</h2><p>Productos que necesitan atención</p></div><a href="{% url 'lista_productos' %}">Gestionar →</a></div><div class="inventory-summary"><div><strong>{{ total_products }}</strong><span>Productos activos</span></div><div><strong>{{ inventory_alerts|length }}</strong><span>Stock bajo</span></div><div class="danger"><strong>{{ out_of_stock }}</strong><span>Agotados</span></div></div><div class="inventory-list">
+          {% for product in inventory_alerts %}<a href="{% url 'editar_producto' product.pk %}" class="inventory-row"><span class="stock-indicator {% if product.stock == 0 %}out{% endif %}"></span><div><strong>{{ product.nombre }}</strong><small>{{ product.sku|default:'Sin SKU' }}</small></div><span class="stock-count {% if product.stock == 0 %}out{% endif %}">{% if product.stock == 0 %}Agotado{% else %}{{ product.stock }} unid.{% endif %}</span></a>{% empty %}<div class="empty-mini success">✓ El inventario está saludable.</div>{% endfor %}
+        </div></article>
+      </section>
+
+      <section class="analytics-grid secondary-charts" id="finanzas">
+        <article class="panel category-panel"><div class="panel-heading"><div><span class="panel-kicker">RENDIMIENTO</span><h2>Ventas por categoría</h2><p>Comparación de ingresos por rubro</p></div></div><div class="bar-chart" id="category-chart"></div></article>
+        <article class="panel quick-actions-panel"><div class="panel-heading"><div><span class="panel-kicker">ATAJOS</span><h2>Acciones rápidas</h2><p>Las tareas más frecuentes</p></div></div><div class="quick-actions"><a href="{% url 'crear_producto' %}"><span>＋</span><div><strong>Crear producto</strong><small>Sumá un artículo al catálogo</small></div></a><a href="#pedidos"><span>▣</span><div><strong>Gestionar pedidos</strong><small>Actualizá pagos y envíos</small></div></a><a href="{% url 'exportar_ventas_csv' %}"><span>⇩</span><div><strong>Exportar reporte</strong><small>Descargá todas las ventas en CSV</small></div></a></div></article>
+      </section>
+
+      <section class="panel orders-panel" id="pedidos">
+        <div class="panel-heading orders-heading"><div><span class="panel-kicker">TRANSACCIONES</span><h2>Pedidos recientes</h2><p>Buscá, filtrá y actualizá tus operaciones</p></div><a class="outline-button" href="{% url 'exportar_ventas_csv' %}">⇩ Exportar CSV</a></div>
+        <form method="get" class="table-filters"><input type="hidden" name="periodo" value="{{ period }}"><label class="filter-search"><span>⌕</span><input name="q" value="{{ request.GET.q }}" placeholder="Pedido, cliente o producto"></label><select name="envio" aria-label="Filtrar estado de envío"><option value="">Todos los envíos</option>{% for value,label in shipping_choices %}<option value="{{ value }}"{% if request.GET.envio == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><select name="pago" aria-label="Filtrar estado de pago"><option value="">Todos los pagos</option>{% for value,label in payment_choices %}<option value="{{ value }}"{% if request.GET.pago == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><select name="orden" aria-label="Ordenar pedidos"><option value="-fecha">Más recientes</option><option value="fecha"{% if request.GET.orden == 'fecha' %} selected{% endif %}>Más antiguos</option><option value="-total"{% if request.GET.orden == '-total' %} selected{% endif %}>Mayor importe</option><option value="total"{% if request.GET.orden == 'total' %} selected{% endif %}>Menor importe</option><option value="cliente"{% if request.GET.orden == 'cliente' %} selected{% endif %}>Cliente A–Z</option></select><button type="submit">Filtrar</button>{% if request.GET.q or request.GET.envio or request.GET.pago %}<a href="?periodo={{ period }}" class="clear-filter">Limpiar</a>{% endif %}</form>
+        <div class="table-scroll"><table class="orders-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Productos</th><th>Total</th><th>Pago</th><th>Envío</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>
+          {% for sale in page_obj %}<tr data-order="{{ sale.pk }}" tabindex="0"><td><button type="button" class="order-code open-order" data-order="{{ sale.pk }}">{{ sale.codigo }}</button></td><td><div class="customer-cell"><span>{{ sale.usuario.username|slice:':1'|upper }}</span><div><strong>{{ sale.usuario.get_full_name|default:sale.usuario.username }}</strong><small>{{ sale.usuario.email|default:'Sin email' }}</small></div></div></td><td><strong>{{ sale.fecha_venta|date:'d M Y' }}</strong><small>{{ sale.fecha_venta|date:'H:i' }} hs</small></td><td><strong>{{ sale.detalles.all|length }} producto{{ sale.detalles.all|length|pluralize:'s' }}</strong><small>{% for detail in sale.detalles.all|slice:':2' %}{{ detail.producto.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}</small></td><td class="money-cell">${{ sale.total|floatformat:0 }}</td><td><span class="status-badge payment-{{ sale.estado_pago }}">{{ sale.get_estado_pago_display }}</span></td><td><span class="status-badge shipping-{{ sale.estado_envio }}">{{ sale.get_estado_envio_display }}</span></td><td><button type="button" class="row-action open-order" data-order="{{ sale.pk }}" aria-label="Ver pedido">•••</button></td></tr>{% empty %}<tr><td colspan="8"><div class="empty-state"><span>⌕</span><strong>No encontramos pedidos</strong><p>Probá con otros filtros o un período diferente.</p></div></td></tr>{% endfor %}
+        </tbody></table></div>
+        {% if page_obj.paginator.num_pages > 1 %}<nav class="pagination" aria-label="Paginación"><span>Mostrando {{ page_obj.start_index }}–{{ page_obj.end_index }} de {{ page_obj.paginator.count }}</span><div>{% if page_obj.has_previous %}<a href="?{{ query_without_page }}&page={{ page_obj.previous_page_number }}">←</a>{% endif %}{% for number in page_obj.paginator.page_range %}{% if number == page_obj.number %}<span class="current">{{ number }}</span>{% elif number >= page_obj.number|add:'-2' and number <= page_obj.number|add:'2' %}<a href="?{{ query_without_page }}&page={{ number }}">{{ number }}</a>{% endif %}{% endfor %}{% if page_obj.has_next %}<a href="?{{ query_without_page }}&page={{ page_obj.next_page_number }}">→</a>{% endif %}</div></nav>{% endif %}
+      </section>
+
+      <section class="shipping-section" id="envios">
+        <div class="section-title-row"><div><span class="panel-kicker">LOGÍSTICA</span><h2>Mapa de envíos</h2><p>Ubicación aproximada y estado operativo de cada entrega.</p></div><span class="live-badge"><i></i>Sincronizado</span></div>
+        <div class="shipping-layout panel">
+          <div id="seller-shipping-map" aria-label="Mapa de envíos activos"></div>
+          <div class="shipping-overview">
+            {% for item in shipping_chart %}<a href="?periodo={{ period }}&envio={{ item.key }}#pedidos"><span class="status-badge shipping-{{ item.key }}">{{ item.label }}</span><strong>{{ item.value }}</strong></a>{% endfor %}
+            <p>{% if shipping_map %}Seleccioná un marcador para abrir los datos del pedido y su seguimiento.{% else %}Los pedidos con envío y ubicación marcada aparecerán en este mapa.{% endif %}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="returns-section panel" id="devoluciones">
+        <div class="panel-heading"><div><span class="panel-kicker">POSTVENTA</span><h2>Solicitudes de devolución</h2><p>Revisá, aprobá o rechazá solicitudes de clientes.</p></div><span class="return-count">{{ pending_returns|length }} pendientes</span></div>
+        <div class="return-list">
+          {% for return in pending_returns %}<article class="return-row"><div><strong>{{ return.venta.codigo }} · {{ return.venta.usuario.get_full_name|default:return.venta.usuario.username }}</strong><span>{{ return.get_motivo_display }} · {{ return.creada_en|date:'d/m/Y H:i' }}</span>{% if return.detalle %}<p>{{ return.detalle }}</p>{% endif %}</div><form method="post" action="{% url 'resolver_devolucion' return.pk %}">{% csrf_token %}<input name="respuesta" maxlength="300" placeholder="Respuesta para el cliente (opcional)"><button name="decision" value="rechazada" class="return-reject">Rechazar</button><button name="decision" value="aprobada" class="return-approve">Aprobar y reembolsar</button></form></article>{% empty %}<div class="empty-mini success">No hay devoluciones pendientes.</div>{% endfor %}
+        </div>
+      </section>
+
+      <section class="bottom-grid" id="clientes"><article class="panel activity-panel"><div class="panel-heading"><div><span class="panel-kicker">EN VIVO</span><h2>Actividad reciente</h2><p>Últimos movimientos de la tienda</p></div><span class="live-badge"><i></i>En vivo</span></div><div class="activity-list">{% for activity in recent_activity|slice:':6' %}<div class="activity-row"><span class="activity-symbol {{ activity.kind }}">{% if activity.kind == 'stock' %}!{% else %}✓{% endif %}</span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p></div><time>{{ activity.date|timesince }} atrás</time></div>{% empty %}<div class="empty-mini">La actividad aparecerá acá.</div>{% endfor %}</div></article><article class="panel customers-card"><span class="panel-kicker">CLIENTES</span><strong class="large-number">{{ active_customers }}</strong><h2>Compradores activos</h2><p>Clientes únicos que realizaron pedidos dentro del período seleccionado.</p><a href="#pedidos">Ver pedidos de clientes →</a></article></section>
+    </div>
+  </main>
+</div>
+
+{% for sale in page_obj %}<div class="order-modal" id="order-modal-{{ sale.pk }}" hidden><div class="modal-backdrop" data-close-modal></div><section class="order-drawer" role="dialog" aria-modal="true" aria-labelledby="order-title-{{ sale.pk }}"><div class="drawer-head"><div><span>DETALLE DEL PEDIDO</span><h2 id="order-title-{{ sale.pk }}">{{ sale.codigo }}</h2><p>Creado el {{ sale.fecha_venta|date:'d/m/Y' }} a las {{ sale.fecha_venta|date:'H:i' }}</p></div><button type="button" data-close-modal aria-label="Cerrar">×</button></div><div class="drawer-body">
+  <div class="order-progress"><span class="done">1<small>Recibido</small></span><i class="done"></i><span class="{% if sale.estado_pago == 'pagado' %}done{% endif %}">2<small>Pagado</small></span><i class="{% if sale.estado_envio == 'enviado' or sale.estado_envio == 'entregado' %}done{% endif %}"></i><span class="{% if sale.estado_envio == 'enviado' or sale.estado_envio == 'entregado' %}done{% endif %}">3<small>Enviado</small></span><i class="{% if sale.estado_envio == 'entregado' %}done{% endif %}"></i><span class="{% if sale.estado_envio == 'entregado' %}done{% endif %}">4<small>Entregado</small></span></div>
+  <div class="drawer-section"><h3>Productos</h3>{% for detail in sale.detalles.all %}<div class="drawer-product"><div class="rank-image">{% if detail.producto.imagen %}<img src="{{ detail.producto.imagen.url }}" alt="">{% else %}◇{% endif %}</div><div><strong>{{ detail.producto.nombre }}</strong><small>{{ detail.cantidad }} × ${{ detail.precio_unitario|floatformat:0 }}</small></div><span>${{ detail.subtotal|floatformat:0 }}</span></div>{% endfor %}<div class="drawer-total"><span>Total</span><strong>${{ sale.total|floatformat:0 }}</strong></div></div>
+  <div class="drawer-columns"><div class="drawer-section"><h3>Cliente</h3><p><strong>{{ sale.usuario.get_full_name|default:sale.usuario.username }}</strong><br>{{ sale.usuario.email|default:'Email no disponible' }}</p></div><div class="drawer-section"><h3>Entrega</h3><p><strong>{{ sale.get_tipo_entrega_display }}</strong><br>{% if sale.tipo_entrega == 'envio' %}{{ sale.direccion_entrega|default:'Dirección no registrada' }}{% if sale.entrega_localidad %}<br>{{ sale.entrega_localidad }}, {{ sale.entrega_provincia }} ({{ sale.entrega_codigo_postal }}){% endif %}{% else %}El cliente retira en tienda.{% endif %}{% if sale.tracking %}<br>{{ sale.transportista|default:'Seguimiento' }}: <strong>{{ sale.tracking }}</strong>{% endif %}</p></div></div>
+  {% if sale.pago_sandbox %}<div class="drawer-section"><h3>Operación de pago</h3><p><strong>{{ sale.pago_sandbox.get_proveedor_display }}</strong> · {{ sale.pago_sandbox.get_estado_display }}{% if sale.pago_sandbox.marca_tarjeta %}<br>{{ sale.pago_sandbox.marca_tarjeta }} terminada en {{ sale.pago_sandbox.ultimos_cuatro }}{% endif %}<br><small>Referencia: {{ sale.pago_sandbox.referencia }}</small></p></div>{% endif %}
+  <form method="post" class="status-form">{% csrf_token %}<input type="hidden" name="venta_id" value="{{ sale.pk }}"><input type="hidden" name="return_query" value="{{ request.GET.urlencode }}"><h3>Actualizar operación y seguimiento</h3><div><label>Pago<select name="estado_pago">{% for value,label in payment_choices %}<option value="{{ value }}"{% if sale.estado_pago == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>Envío<select name="estado_envio">{% for value,label in shipping_choices %}<option value="{{ value }}"{% if sale.estado_envio == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>Transportista<input name="transportista" maxlength="80" value="{{ sale.transportista }}" placeholder="Ej. Correo Argentino"></label><label>Código de seguimiento<input name="tracking" maxlength="80" value="{{ sale.tracking }}" placeholder="Ej. AR123456789"></label></div><button type="submit" class="primary-button">Guardar cambios</button></form>
+</div></section></div>{% endfor %}
+
+{{ sales_series|json_script:'sales-series' }}
+{{ shipping_chart|json_script:'shipping-data' }}
+{{ shipping_map|json_script:'shipping-map-data' }}
+{{ category_chart|json_script:'category-data' }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="{% static 'tienda/js/dashboard.js' %}"></script>
+</body>
+</html>

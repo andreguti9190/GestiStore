@@ -8,7 +8,7 @@ from .models import Producto
 class ProductoForm(forms.ModelForm):
     class Meta:
         model = Producto
-        fields = ['nombre', 'descripcion', 'precio', 'stock', 'categoria',
+        fields = ['nombre', 'sku', 'descripcion', 'precio', 'costo', 'stock', 'categoria',
                   'imagen', 'peso_kg', 'activo']
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 4}),
@@ -29,6 +29,28 @@ class RegistroForm(UserCreationForm):
             'invalid': 'Ingresá una fecha de nacimiento válida.',
         },
     )
+    responsable_nombre = forms.CharField(
+        required=False,
+        max_length=120,
+        label='Nombre y apellido del adulto responsable',
+        widget=forms.TextInput(attrs={'autocomplete': 'name'}),
+    )
+    responsable_dni = forms.CharField(
+        required=False,
+        max_length=12,
+        label='DNI del adulto responsable',
+        widget=forms.TextInput(attrs={'inputmode': 'numeric', 'autocomplete': 'off'}),
+    )
+    responsable_parentesco = forms.CharField(
+        required=False,
+        max_length=40,
+        label='Vínculo con el menor',
+        widget=forms.TextInput(attrs={'placeholder': 'Madre, padre, tutor…'}),
+    )
+    autorizacion_responsable = forms.BooleanField(
+        required=False,
+        label='El adulto responsable autoriza las compras de esta cuenta',
+    )
     acepta_terminos = forms.BooleanField(
         required=True,
         label='Acepto los Términos y Condiciones',
@@ -40,7 +62,9 @@ class RegistroForm(UserCreationForm):
     class Meta:
         model = User
         fields = [
-            'username', 'email', 'fecha_nacimiento', 'password1', 'password2',
+            'username', 'email', 'fecha_nacimiento', 'responsable_nombre',
+            'responsable_dni', 'responsable_parentesco', 'autorizacion_responsable',
+            'password1', 'password2',
             'acepta_terminos',
         ]
 
@@ -71,18 +95,39 @@ class RegistroForm(UserCreationForm):
     def clean_fecha_nacimiento(self):
         fecha = self.cleaned_data['fecha_nacimiento']
         hoy = timezone.localdate()
-        try:
-            limite_mayoria_edad = hoy.replace(year=hoy.year - 18)
-        except ValueError:
-            # El 29 de febrero cumple años legalmente, como máximo, el 28 en
-            # los años no bisiestos para esta validación de acceso.
-            limite_mayoria_edad = hoy.replace(year=hoy.year - 18, day=28)
-
         if fecha > hoy:
             raise forms.ValidationError('La fecha de nacimiento no puede ser futura.')
-        if fecha > limite_mayoria_edad:
-            raise forms.ValidationError('Tenés que ser mayor de 18 años para crear una cuenta.')
         return fecha
+
+    def clean(self):
+        cleaned = super().clean()
+        fecha = cleaned.get('fecha_nacimiento')
+        if not fecha:
+            return cleaned
+        hoy = timezone.localdate()
+        edad = hoy.year - fecha.year - ((hoy.month, hoy.day) < (fecha.month, fecha.day))
+        if edad >= 18:
+            cleaned['es_menor'] = False
+            return cleaned
+
+        cleaned['es_menor'] = True
+        nombre = (cleaned.get('responsable_nombre') or '').strip()
+        dni = ''.join(character for character in (cleaned.get('responsable_dni') or '') if character.isdigit())
+        parentesco = (cleaned.get('responsable_parentesco') or '').strip()
+        if not nombre:
+            self.add_error('responsable_nombre', 'Ingresá el nombre del adulto responsable.')
+        if not 7 <= len(dni) <= 9:
+            self.add_error('responsable_dni', 'Ingresá un DNI válido de 7 a 9 dígitos.')
+        else:
+            cleaned['responsable_dni'] = dni
+        if not parentesco:
+            self.add_error('responsable_parentesco', 'Indicá el vínculo con el menor.')
+        if not cleaned.get('autorizacion_responsable'):
+            self.add_error(
+                'autorizacion_responsable',
+                'El adulto responsable debe autorizar las compras de la cuenta.',
+            )
+        return cleaned
 
 
 class LoginForm(AuthenticationForm):

@@ -25,6 +25,10 @@ TUNNEL_URL_PATTERN = re.compile(
     r"https://[a-z0-9-]+\.trycloudflare\.com",
     re.IGNORECASE,
 )
+RESERVED_TRYCLOUDFLARE_HOSTS = {
+    "api.trycloudflare.com",
+    "www.trycloudflare.com",
+}
 CLOUDFLARED_VERSION = "2026.10.1"
 CLOUDFLARED_SHA256_AMD64 = "4d2490e74082c5d48dbfedaf92576fa5bd1702379ab88eb7faa0cfbe8dc891b6"
 
@@ -36,8 +40,17 @@ def _available_local_port():
 
 
 def _tunnel_url(line):
-    match = TUNNEL_URL_PATTERN.search(line)
-    return match.group(0).rstrip("/") if match else None
+    """Extrae solamente la URL aleatoria asignada al túnel rápido.
+
+    cloudflared también imprime ``api.trycloudflare.com`` cuando consulta el
+    servicio que crea el túnel. Esa dirección no es la URL pública de la
+    tienda y no debe usarse para configurar hosts, cookies ni WebAuthn.
+    """
+    for match in TUNNEL_URL_PATTERN.finditer(line):
+        candidate = match.group(0).rstrip("/")
+        if urlparse(candidate).hostname not in RESERVED_TRYCLOUDFLARE_HOSTS:
+            return candidate
+    return None
 
 
 def _file_sha256(path):
