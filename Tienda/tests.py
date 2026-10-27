@@ -949,8 +949,8 @@ class ComprobanteCompraTests(TestCase):
         response = self.client.get(reverse('confirmar_compra'))
 
         self.assertContains(response, 'name="metodo_pago" value="mercadopago"')
-        self.assertContains(response, 'Checkout Pro de Mercado Pago')
-        self.assertContains(response, 'cuenta de prueba de tipo comprador')
+        self.assertNotContains(response, 'Checkout Pro de Mercado Pago')
+        self.assertNotContains(response, 'id="seccion-mercadopago"')
         self.assertNotContains(response, 'DemoPay')
         self.assertNotContains(response, 'Datos para transferencia')
         self.assertNotContains(response, 'id="seccion-tarjeta"')

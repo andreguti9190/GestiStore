@@ -54,33 +54,9 @@
         <div id="pickup-copy" class="pickup-copy" hidden><strong>Retiro coordinado</strong><p>Cuando el pago quede aprobado, el vendedor preparará el pedido y actualizará su estado.</p></div>
       </section>
 
-      <div class="pago-metodos">
-        <input type="hidden" name="metodo_pago" value="mercadopago">
-        <div class="metodo-btn activo metodo-mercadopago" id="btn-mercadopago">
-          <span class="mp-mark" aria-hidden="true">mp</span>
-          Mercado Pago
-        </div>
-      </div>
+      <input type="hidden" name="metodo_pago" value="mercadopago">
 
-      {% if mercadopago_enabled %}
-      <div id="seccion-mercadopago" class="payment-detail-section">
-        <div class="mercadopago-intro">
-          <div class="sandbox-brand"><span class="mp-mark" aria-hidden="true">mp</span><div><strong>Checkout Pro de Mercado Pago</strong><small>{% if mercadopago_test_mode %}Modo prueba configurado{% else %}Pago protegido en Mercado Pago{% endif %}</small></div></div>
-          <p>Al confirmar, vas a continuar en Mercado Pago para elegir tarjeta, dinero en cuenta u otro medio disponible. AmpereStore nunca recibe ni guarda los datos de tu tarjeta.</p>
-          {% if mercadopago_test_mode %}
-          <div class="mercadopago-test-note" role="note">
-            <strong>Prueba de Mercado Pago:</strong>
-            en el checkout elegí <b>Ingresar con mi cuenta</b> y usá una cuenta de prueba de tipo comprador. No uses tu cuenta personal ni pagues como invitado: el sandbox puede mostrar “Oh, no, algo anduvo mal”.
-          </div>
-          {% endif %}
-          <ul>
-            <li>El estado se confirma directamente con la API de Mercado Pago.</li>
-            <li>El pedido y el panel se actualizan automáticamente mediante Webhooks.</li>
-            <li>Las devoluciones aprobadas se procesan sobre el pago original.</li>
-          </ul>
-        </div>
-      </div>
-      {% else %}
+      {% if not mercadopago_enabled %}
       <div class="secure-context-note" style="margin-top:22px">
         Mercado Pago todavía no está configurado. Un administrador debe completar las credenciales antes de aceptar pagos en línea.
       </div>
