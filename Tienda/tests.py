@@ -1,15 +1,22 @@
 import re
 import json
+import hashlib
+import hmac
+import time
 from datetime import timedelta
+from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.error import URLError
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -23,6 +30,7 @@ from .models import (
     CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
     Perfil, Producto, SolicitudDevolucion, Venta,
 )
+from .payments import MercadoPagoError
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -87,6 +95,7 @@ class LoginDosFactoresTests(TestCase):
             email='cliente@example.com',
             password='UnaClaveSegura123!',
         )
+        Perfil.objects.create(usuario=self.user, verificacion_dos_pasos=True)
 
     def iniciar_primer_factor(self):
         return self.client.post(reverse('login'), {
@@ -102,6 +111,52 @@ class LoginDosFactoresTests(TestCase):
         self.assertEqual(mail.outbox[0].to, [self.user.email])
         self.assertNotIn('_auth_user_id', self.client.session)
         self.assertIn('otp_code_hash', self.client.session)
+
+    def test_sin_verificacion_dos_pasos_inicia_sesion_directamente(self):
+        user = User.objects.create_user(
+            username='sin-doble-factor',
+            email='sin-doble-factor@example.com',
+            password='UnaClaveSegura123!',
+        )
+        Perfil.objects.create(usuario=user)
+
+        response = self.client.post(reverse('login'), {
+            'username': user.username,
+            'password': 'UnaClaveSegura123!',
+        })
+
+        self.assertRedirects(response, reverse('inicio'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
+        self.assertNotIn('otp_code_hash', self.client.session)
+        self.assertFalse(
+            any('Tu código de acceso' in message.subject for message in mail.outbox)
+        )
+
+    def test_configuracion_de_seguridad_activa_y_desactiva_el_doble_factor(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('configurar_verificacion_dos_pasos'), {'activar': '0'}
+        )
+        self.assertRedirects(response, reverse('seguridad_cuenta'))
+        self.user.perfil.refresh_from_db()
+        self.assertFalse(self.user.perfil.verificacion_dos_pasos)
+
+        self.client.logout()
+        response = self.iniciar_primer_factor()
+        self.assertRedirects(response, reverse('inicio'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+        response = self.client.post(
+            reverse('configurar_verificacion_dos_pasos'), {'activar': '1'}
+        )
+        self.assertRedirects(response, reverse('seguridad_cuenta'))
+        self.user.perfil.refresh_from_db()
+        self.assertTrue(self.user.perfil.verificacion_dos_pasos)
+
+        self.client.logout()
+        response = self.iniciar_primer_factor()
+        self.assertRedirects(response, reverse('verificar_2fa'))
 
     def test_formulario_repetido_no_envia_otro_codigo(self):
         primera_respuesta = self.iniciar_primer_factor()
@@ -275,20 +330,38 @@ class RegistroDosFactoresTests(TestCase):
         datos.update(cambios)
         return datos
 
-    def test_registro_crea_cuenta_inactiva_y_envia_codigo(self):
-        response = self.client.post(reverse('registro'), self.datos_validos())
+    def test_registro_con_2fa_crea_cuenta_inactiva_y_envia_codigo(self):
+        response = self.client.post(
+            reverse('registro'), self.datos_validos(activar_2fa='on')
+        )
 
         self.assertRedirects(response, reverse('verificar_registro'))
         usuario = User.objects.get(username='cliente_nuevo')
         self.assertFalse(usuario.is_active)
+        self.assertTrue(usuario.perfil.verificacion_dos_pasos)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['nuevo@example.com'])
         self.assertIn('registration_otp_code_hash', self.client.session)
         self.assertEqual(usuario.perfil.terminos_version, '2026-10-19')
         self.assertIsNotNone(usuario.perfil.terminos_aceptados_en)
 
+    def test_registro_sin_2fa_activa_cuenta_e_inicia_sesion(self):
+        response = self.client.post(reverse('registro'), self.datos_validos())
+
+        self.assertRedirects(response, reverse('inicio'))
+        usuario = User.objects.get(username='cliente_nuevo')
+        self.assertTrue(usuario.is_active)
+        self.assertFalse(usuario.perfil.verificacion_dos_pasos)
+        self.assertEqual(int(self.client.session['_auth_user_id']), usuario.pk)
+        self.assertNotIn('registration_otp_code_hash', self.client.session)
+        self.assertFalse(
+            any('Confirmá tu cuenta' in message.subject for message in mail.outbox)
+        )
+
     def test_codigo_correcto_activa_cuenta_e_inicia_sesion(self):
-        self.client.post(reverse('registro'), self.datos_validos())
+        self.client.post(
+            reverse('registro'), self.datos_validos(activar_2fa='on')
+        )
         codigo = re.search(r'\b\d{6}\b', mail.outbox[0].body).group()
 
         response = self.client.post(reverse('verificar_registro'), {'codigo': codigo})
@@ -321,6 +394,7 @@ class RegistroDosFactoresTests(TestCase):
             responsable_dni='30123456',
             responsable_parentesco='Madre',
             autorizacion_responsable='on',
+            activar_2fa='on',
         ))
 
         self.assertRedirects(response, reverse('verificar_registro'))
@@ -340,7 +414,9 @@ class RegistroDosFactoresTests(TestCase):
 
     @patch('Tienda.views.send_registration_code', side_effect=Exception('SMTP caído'))
     def test_falla_de_email_no_deja_cuenta_inactiva_bloqueando_datos(self, _send):
-        response = self.client.post(reverse('registro'), self.datos_validos())
+        response = self.client.post(
+            reverse('registro'), self.datos_validos(activar_2fa='on')
+        )
 
         self.assertContains(response, 'No pudimos enviar el código de verificación')
         self.assertFalse(User.objects.filter(username='cliente_nuevo').exists())
@@ -369,13 +445,16 @@ class RegistroDosFactoresTests(TestCase):
         Perfil.objects.create(usuario=usuario_anterior, registro_verificado_en=None)
         pk_anterior = usuario_anterior.pk
 
-        response = self.client.post(reverse('registro'), self.datos_validos())
+        response = self.client.post(
+            reverse('registro'), self.datos_validos(activar_2fa='on')
+        )
 
         self.assertRedirects(response, reverse('verificar_registro'))
         usuario_nuevo = User.objects.get(username='cliente_nuevo')
         self.assertEqual(usuario_nuevo.pk, pk_anterior)
         self.assertFalse(usuario_nuevo.is_active)
         self.assertTrue(usuario_nuevo.check_password('UnaClaveSegura123!'))
+        self.assertTrue(usuario_nuevo.perfil.verificacion_dos_pasos)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('registration_otp_code_hash', self.client.session)
 
@@ -745,6 +824,14 @@ class InicioFacilTests(TestCase):
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    MERCADOPAGO_ACCESS_TOKEN='TEST-token-servidor',
+    MERCADOPAGO_PUBLIC_KEY='TEST-clave-publica',
+    MERCADOPAGO_WEBHOOK_SECRET='firma-secreta-prueba',
+    MERCADOPAGO_MODE='test',
+    PUBLIC_BASE_URL='https://tienda.example.test',
+)
 class ComprobanteCompraTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -771,28 +858,37 @@ class ComprobanteCompraTests(TestCase):
             }
         }
         session.save()
+        self.mp_patch = patch(
+            'Tienda.views.create_mercadopago_preference',
+            return_value='https://mp.test/checkout',
+        )
+        self.mp_patch.start()
+        self.addCleanup(self.mp_patch.stop)
 
-    def test_transferencia_crea_pedido_pendiente_sin_comprobante(self):
+    def test_mercadopago_crea_pedido_y_redirige_al_checkout(self):
         response = self.client.post(reverse('procesar_pago'), {
-            'metodo_pago': 'transferencia',
+            'metodo_pago': 'mercadopago',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
         })
 
-        self.assertRedirects(response, reverse('compra_exitosa'))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, 'https://mp.test/checkout')
         venta = Venta.objects.get(usuario=self.user)
         self.assertEqual(venta.total, 25000)
+        self.assertEqual(venta.metodo_pago, 'mercadopago')
         self.assertEqual(DetalleVenta.objects.filter(venta=venta).count(), 1)
         self.assertEqual(venta.estado, 'pendiente')
         self.assertEqual(venta.estado_pago, 'pendiente')
-        self.assertEqual(venta.pago_sandbox.proveedor, 'transferencia')
+        self.assertEqual(venta.pago_sandbox.proveedor, 'mercadopago')
         self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(self.client.session['carrito'], {})
         self.producto.refresh_from_db()
         self.assertEqual(self.producto.stock, 3)
 
     def test_envio_guarda_direccion_y_coordenadas(self):
         self.client.post(reverse('procesar_pago'), {
-            'metodo_pago': 'transferencia',
+            'metodo_pago': 'mercadopago',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
             'tipo_entrega': 'envio',
@@ -809,138 +905,546 @@ class ComprobanteCompraTests(TestCase):
         self.assertEqual(venta.direccion_entrega, 'Av. Corrientes 1234')
         self.assertEqual(str(venta.entrega_latitud), '-34.603700')
 
-    def test_envio_requiere_ubicacion_en_mapa(self):
+    def test_envio_sin_coordenadas_es_valido(self):
         response = self.client.post(reverse('procesar_pago'), {
-            'metodo_pago': 'transferencia',
+            'metodo_pago': 'mercadopago',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
             'tipo_entrega': 'envio',
             'direccion_entrega': 'Av. Corrientes 1234',
-            'entrega_localidad': 'CABA',
             'entrega_provincia': 'Buenos Aires',
             'entrega_codigo_postal': 'C1043',
-        }, follow=True)
+        })
 
-        self.assertContains(response, 'Marcá en el mapa')
-        self.assertFalse(Venta.objects.filter(usuario=self.user).exists())
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, 'https://mp.test/checkout')
+        venta = Venta.objects.get(usuario=self.user)
+        self.assertEqual(venta.tipo_entrega, 'envio')
+        self.assertIsNone(venta.entrega_latitud)
+        self.assertIsNone(venta.entrega_longitud)
+        self.assertEqual(venta.entrega_localidad, 'Buenos Aires')
 
-    @patch('Tienda.views.send_purchase_receipt', side_effect=Exception('SMTP caído'))
-    def test_falla_de_email_no_anula_la_compra(self, _send):
+    def test_selector_de_ubicacion_usa_mapa_local_sin_localidad_manual(self):
+        response = self.client.get(reverse('confirmar_compra'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="delivery-map-panel" hidden')
+        self.assertContains(response, 'id="delivery-map"')
+        self.assertContains(response, 'id="delivery-address"')
+        self.assertContains(response, 'id="delivery-province"')
+        self.assertContains(response, 'id="delivery-postal-code"')
+        self.assertContains(response, 'id="delivery-locality-value"')
+        self.assertContains(response, f'data-address-url="{reverse("direccion_argentina")}"')
+        self.assertContains(response, f'data-esri-url="{settings.ESRI_GEOCODE_URL}"')
+        self.assertContains(response, 'tienda/vendor/leaflet/leaflet.js')
+        self.assertContains(response, 'cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js')
+        self.assertContains(response, 'geocodeFromBrowser')
+        self.assertContains(response, 'showProvinceFallback(option)')
+        self.assertContains(response, 'Tierra del Fuego, Antártida e Islas del Atlántico Sur')
+        self.assertNotContains(response, 'Usar mi ubicación actual')
+        self.assertNotContains(response, 'id="delivery-locality-search"')
+        self.assertNotContains(response, 'unpkg.com/leaflet')
+
+    def test_selector_solo_ofrece_mercado_pago(self):
+        response = self.client.get(reverse('confirmar_compra'))
+
+        self.assertContains(response, 'name="metodo_pago" value="mercadopago"')
+        self.assertContains(response, 'Checkout Pro de Mercado Pago')
+        self.assertContains(response, 'cuenta de prueba de tipo comprador')
+        self.assertNotContains(response, 'DemoPay')
+        self.assertNotContains(response, 'Datos para transferencia')
+        self.assertNotContains(response, 'id="seccion-tarjeta"')
+        self.assertNotContains(response, 'id="seccion-transferencia"')
+
+    def test_procesar_pago_rechaza_metodos_retirados(self):
         response = self.client.post(reverse('procesar_pago'), {
-            'metodo_pago': 'tarjeta',
+            'metodo_pago': 'transferencia',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
-        })
-        payment = PagoSandbox.objects.get(venta__usuario=self.user)
-        response = self.client.post(
-            reverse('pago_sandbox', args=[payment.referencia]),
-            {'demo_token': 'demo_visa_approved'},
-        )
+        }, follow=True)
 
-        self.assertEqual(self.client.session['comprobante_enviado'], False)
-        self.assertRedirects(response, reverse('compra_exitosa'))
-        self.assertEqual(Venta.objects.filter(usuario=self.user).count(), 1)
-        self.assertEqual(Venta.objects.get(usuario=self.user).estado_pago, 'pagado')
+        self.assertContains(response, 'solo aceptamos pagos con Mercado Pago')
+        self.assertFalse(Venta.objects.filter(usuario=self.user).exists())
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, 5)
+
+    @patch('Tienda.views.urlopen')
+    def test_ubicacion_resuelve_localidad_desde_coordenadas(self, mocked_urlopen):
+        cache.clear()
+        mocked_urlopen.return_value.__enter__.return_value = BytesIO(json.dumps({
+            'ubicacion': {
+                'provincia': {'nombre': 'Santa Fe'},
+                'gobierno_local': {'nombre': 'Rosario'},
+                'departamento': {'nombre': 'Rosario'},
+            },
+        }).encode('utf-8'))
+
+        response = self.client.get(reverse('ubicacion_argentina'), {
+            'lat': '-32.9442',
+            'lng': '-60.6505',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['localidad'], 'Rosario')
+        self.assertEqual(response.json()['provincia'], 'Santa Fe')
+        requested_url = mocked_urlopen.call_args.args[0].full_url
+        self.assertIn('lat=-32.9442', requested_url)
+        self.assertIn('lon=-60.6505', requested_url)
+
+    def test_ubicacion_rechaza_coordenadas_invalidas(self):
+        response = self.client.get(reverse('ubicacion_argentina'), {
+            'lat': '999',
+            'lng': '-60',
+        })
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch('Tienda.views.urlopen')
+    def test_direccion_resuelve_ubicacion_desde_texto(self, mocked_urlopen):
+        cache.clear()
+        mocked_urlopen.return_value.__enter__.return_value = BytesIO(json.dumps({
+            'direcciones': [
+                {
+                    'ubicacion': {'lat': None, 'lon': None},
+                    'localidad': {'nombre': 'Sin geolocalización'},
+                },
+                {
+                    'ubicacion': {'lat': -32.9442, 'lon': -60.6505},
+                    'localidad': {'nombre': 'Rosario'},
+                    'departamento': {'nombre': 'Rosario'},
+                    'nomenclatura': 'CÓRDOBA 1234, Rosario, Santa Fe',
+                },
+            ],
+        }).encode('utf-8'))
+
+        response = self.client.get(reverse('direccion_argentina'), {
+            'direccion': 'Córdoba 1234',
+            'provincia': '82',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['localidad'], 'Rosario')
+        self.assertEqual(data['provincia'], 'Santa Fe')
+        self.assertAlmostEqual(data['lat'], -32.9442)
+        self.assertAlmostEqual(data['lng'], -60.6505)
+        self.assertEqual(data['nomenclatura'], 'CÓRDOBA 1234, Rosario, Santa Fe')
+        requested_url = mocked_urlopen.call_args.args[0].full_url
+        self.assertIn('/direcciones?', requested_url)
+        self.assertIn('provincia=82', requested_url)
+
+    @patch('Tienda.views.urlopen')
+    def test_direccion_ambigua_usa_esri_y_codigo_postal_como_respaldo(self, mocked_urlopen):
+        cache.clear()
+        georef_response = BytesIO(json.dumps({
+            'direcciones': [
+                {
+                    'ubicacion': {'lat': -31.681055, 'lon': -60.936820},
+                    'localidad': {'nombre': 'San Agustín'},
+                    'departamento': {'nombre': 'Las Colonias'},
+                    'nomenclatura': 'CORDOBA 1234, San Agustín, Santa Fe',
+                },
+                {
+                    'ubicacion': {'lat': -33.315876, 'lon': -62.043409},
+                    'localidad': {'nombre': 'Chañar Ladeado'},
+                    'departamento': {'nombre': 'Caseros'},
+                    'nomenclatura': 'CORDOBA 1234, Chañar Ladeado, Santa Fe',
+                },
+            ],
+        }).encode('utf-8'))
+        esri_response = BytesIO(json.dumps({
+            'candidates': [{
+                'address': 'Calle Cordoba 1234, Rosario, S2000, Santa Fe',
+                'location': {'x': -60.6505, 'y': -32.9442},
+                'score': 96.2,
+                'attributes': {
+                    'Match_addr': 'Calle Cordoba 1234, Rosario, S2000, Santa Fe',
+                    'City': 'Rosario',
+                    'Region': 'Santa Fe',
+                    'Postal': 'S2000',
+                },
+            }],
+        }).encode('utf-8'))
+        mocked_urlopen.side_effect = [georef_response, esri_response]
+
+        response = self.client.get(reverse('direccion_argentina'), {
+            'direccion': 'Córdoba 1234',
+            'provincia': '82',
+            'codigo_postal': '2000',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['fuente'], 'esri')
+        self.assertEqual(data['localidad'], 'Rosario')
+        self.assertEqual(data['precision'], 'exacta')
+        self.assertAlmostEqual(data['lat'], -32.9442)
+        self.assertAlmostEqual(data['lng'], -60.6505)
+        esri_url = mocked_urlopen.call_args_list[1].args[0].full_url
+        self.assertIn('SingleLine=', esri_url)
+        self.assertIn('2000', esri_url)
+
+    @patch('Tienda.views.urlopen')
+    def test_direccion_sin_resultados_mantiene_un_mapa_provincial(self, mocked_urlopen):
+        cache.clear()
+        mocked_urlopen.side_effect = [
+            BytesIO(json.dumps({'direcciones': []}).encode('utf-8')),
+            BytesIO(json.dumps({'candidates': []}).encode('utf-8')),
+        ]
+
+        response = self.client.get(reverse('direccion_argentina'), {
+            'direccion': 'Calle Inexistente 9999',
+            'provincia': '82',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['fuente'], 'respaldo-provincial')
+        self.assertEqual(data['precision'], 'provincia')
+        self.assertEqual(data['localidad'], 'Santa Fe')
+
+    @patch('Tienda.views.urlopen')
+    def test_direccion_usa_esri_si_georef_no_responde(self, mocked_urlopen):
+        cache.clear()
+        mocked_urlopen.side_effect = [
+            URLError('Georef caido'),
+            BytesIO(json.dumps({
+                'candidates': [{
+                    'address': 'Calle Boulevard Buenos Aires 1234, Luis Guillon, Monte Grande, B1838, Provincia de Buenos Aires',
+                    'location': {'x': -58.450481, 'y': -34.811086},
+                    'score': 92.0,
+                    'attributes': {
+                        'Match_addr': 'Calle Boulevard Buenos Aires 1234, Luis Guillon, Monte Grande, B1838, Provincia de Buenos Aires',
+                        'City': 'Monte Grande',
+                        'Region': 'Provincia de Buenos Aires',
+                        'Postal': 'B1838',
+                    },
+                }],
+            }).encode('utf-8')),
+        ]
+
+        response = self.client.get(reverse('direccion_argentina'), {
+            'direccion': 'Boulevard Buenos Aires 1234',
+            'provincia': '06',
+            'codigo_postal': '1838',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        self.assertEqual(response.json()['fuente'], 'esri')
+
+    def test_direccion_rechaza_datos_invalidos(self):
+        response = self.client.get(reverse('direccion_argentina'), {
+            'direccion': 'abc',
+            'provincia': '82',
+        })
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch('Tienda.views.urlopen')
+    def test_catalogo_oficial_devuelve_localidades_de_la_provincia(self, mocked_urlopen):
+        cache.clear()
+        mocked_urlopen.return_value.__enter__.return_value = BytesIO(json.dumps({
+            'localidades': [{
+                'id': '82063010000',
+                'nombre': 'Rosario',
+                'departamento': {'nombre': 'Rosario'},
+                'centroide': {'lat': -32.9442, 'lon': -60.6505},
+            }],
+        }).encode('utf-8'))
+
+        response = self.client.get(reverse('localidades_argentina'), {'provincia': '82'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['fuente'], 'georef')
+        self.assertEqual(response.json()['localidades'][0]['nombre'], 'Rosario')
+        requested_url = mocked_urlopen.call_args.args[0].full_url
+        self.assertIn('provincia=82', requested_url)
+
+    @patch('Tienda.views.urlopen')
+    def test_catalogo_rechaza_provincia_desconocida(self, mocked_urlopen):
+        response = self.client.get(reverse('localidades_argentina'), {'provincia': '99'})
+
+        self.assertEqual(response.status_code, 400)
+        mocked_urlopen.assert_not_called()
 
     @patch('Tienda.views.publish_dashboard_event')
-    def test_compra_emite_evento_websocket_al_confirmarse(self, publish):
+    def test_compra_emite_evento_websocket_al_crearse(self, publish):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(reverse('procesar_pago'), {
-                'metodo_pago': 'transferencia',
+                'metodo_pago': 'mercadopago',
                 'verification_method': 'password',
                 'account_password': 'UnaClaveSegura123!',
             })
 
-        self.assertRedirects(response, reverse('compra_exitosa'))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, 'https://mp.test/checkout')
         venta = Venta.objects.get(usuario=self.user)
         publish.assert_called_once_with('sale.created', venta.pk)
 
-    def iniciar_pago_tarjeta(self):
+    def test_pagina_de_pago_sin_2fa_no_pide_confirmacion_extra(self):
+        response = self.client.get(reverse('confirmar_compra'))
+
+        self.assertNotContains(response, 'Confirmá que sos vos')
+        self.assertContains(response, 'no tiene activa la verificación en dos pasos')
+
+    def test_compra_sin_2fa_no_requiere_metodo_de_verificacion(self):
         response = self.client.post(reverse('procesar_pago'), {
-            'metodo_pago': 'tarjeta',
+            'metodo_pago': 'mercadopago',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, 'https://mp.test/checkout')
+        self.assertTrue(Venta.objects.filter(usuario=self.user).exists())
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    MERCADOPAGO_ACCESS_TOKEN='TEST-token-servidor',
+    MERCADOPAGO_PUBLIC_KEY='TEST-clave-publica',
+    MERCADOPAGO_WEBHOOK_SECRET='firma-secreta-prueba',
+    MERCADOPAGO_MODE='test',
+    PUBLIC_BASE_URL='https://tienda.example.test',
+)
+class CompraConVerificacionDosPasosTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comprador-2fa',
+            email='comprador-2fa@example.com',
+            password='UnaClaveSegura123!',
+        )
+        Perfil.objects.create(usuario=self.user, verificacion_dos_pasos=True)
+        self.producto = Producto.objects.create(
+            nombre='Monitor',
+            precio='20000.00',
+            stock=3,
+            categoria='informatica',
+        )
+        self.client.force_login(self.user)
+        session = self.client.session
+        session['carrito'] = {
+            str(self.producto.pk): {
+                'producto_id': self.producto.pk,
+                'producto_nombre': self.producto.nombre,
+                'producto_precio': 20000.0,
+                'producto_imagen': '',
+                'producto_categoria': 'Informática',
+                'cantidad': 1,
+            }
+        }
+        session.save()
+        self.mp_patch = patch(
+            'Tienda.views.create_mercadopago_preference',
+            return_value='https://mp.test/checkout',
+        )
+        self.mp_patch.start()
+        self.addCleanup(self.mp_patch.stop)
+
+    def test_pagina_de_pago_pide_confirmacion_de_identidad(self):
+        response = self.client.get(reverse('confirmar_compra'))
+
+        self.assertContains(response, 'Confirmá que sos vos')
+        self.assertContains(response, 'verificación en dos pasos')
+
+    def test_sin_confirmar_identidad_no_crea_la_venta(self):
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'mercadopago',
+        }, follow=True)
+
+        self.assertContains(response, 'Elegí cómo querés confirmar tu identidad')
+        self.assertFalse(Venta.objects.filter(usuario=self.user).exists())
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, 3)
+
+    def test_password_correcta_permite_confirmar_la_compra(self):
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'mercadopago',
             'verification_method': 'password',
             'account_password': 'UnaClaveSegura123!',
         })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, 'https://mp.test/checkout')
+        self.assertTrue(Venta.objects.filter(usuario=self.user).exists())
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    MERCADOPAGO_ACCESS_TOKEN='TEST-token-servidor',
+    MERCADOPAGO_PUBLIC_KEY='TEST-clave-publica',
+    MERCADOPAGO_WEBHOOK_SECRET='firma-secreta-prueba',
+    MERCADOPAGO_MODE='test',
+    PUBLIC_BASE_URL='https://tienda.example.test',
+)
+class MercadoPagoCheckoutTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comprador-mp', email='mp@example.com', password='ClaveSegura123!'
+        )
+        self.product = Producto.objects.create(
+            nombre='Mouse MP', precio='10000.00', stock=5, categoria='perifericos_gaming'
+        )
+        self.client.force_login(self.user)
+        session = self.client.session
+        session['carrito'] = {
+            str(self.product.pk): {
+                'producto_id': self.product.pk,
+                'producto_nombre': self.product.nombre,
+                'producto_precio': 10000.0,
+                'producto_imagen': '',
+                'producto_categoria': 'Periféricos y Gaming',
+                'cantidad': 2,
+            }
+        }
+        session.save()
+
+    @patch('Tienda.payments._mercadopago_request')
+    def test_crea_preferencia_y_redirige_a_checkout_pro(self, api_request):
+        api_request.return_value = {
+            'id': 'pref-123',
+            'sandbox_init_point': 'https://sandbox.mercadopago.com.ar/checkout/v1/redirect',
+            'init_point': 'https://www.mercadopago.com.ar/checkout/v1/redirect',
+        }
+
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'mercadopago',
+            'verification_method': 'password',
+            'account_password': 'ClaveSegura123!',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, api_request.return_value['sandbox_init_point'])
         payment = PagoSandbox.objects.get(venta__usuario=self.user)
-        self.assertRedirects(
-            response,
-            reverse('pago_sandbox', args=[payment.referencia]),
-            fetch_redirect_response=False,
+        self.assertEqual(payment.proveedor, 'mercadopago')
+        self.assertEqual(payment.preferencia_externa, 'pref-123')
+        self.assertEqual(self.client.session['carrito'], {})
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 3)
+        sent_payload = api_request.call_args.kwargs['payload']
+        self.assertEqual(sent_payload['external_reference'], payment.venta.codigo)
+        self.assertEqual(sent_payload['notification_url'], 'https://tienda.example.test/pagos/mercadopago/webhook/')
+        self.assertNotIn('payer', sent_payload)
+
+    @override_settings(MERCADOPAGO_MODE='production')
+    @patch('Tienda.payments._mercadopago_request')
+    def test_preferencia_productiva_incluye_email_del_comprador(self, api_request):
+        api_request.return_value = {
+            'id': 'pref-production-123',
+            'init_point': 'https://www.mercadopago.com.ar/checkout/v1/redirect',
+        }
+
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'mercadopago',
+            'verification_method': 'password',
+            'account_password': 'ClaveSegura123!',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        sent_payload = api_request.call_args.kwargs['payload']
+        self.assertEqual(sent_payload['payer'], {'email': self.user.email})
+
+    @patch('Tienda.views.create_mercadopago_preference')
+    def test_error_al_crear_preferencia_conserva_carrito_y_libera_stock(self, create):
+        create.side_effect = MercadoPagoError('Servicio temporalmente no disponible.')
+
+        response = self.client.post(reverse('procesar_pago'), {
+            'metodo_pago': 'mercadopago',
+            'verification_method': 'password',
+            'account_password': 'ClaveSegura123!',
+        }, follow=True)
+
+        self.assertContains(response, 'Servicio temporalmente no disponible')
+        self.assertTrue(self.client.session['carrito'])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 5)
+        payment = PagoSandbox.objects.get(venta__usuario=self.user)
+        self.assertEqual(payment.estado, 'rechazado')
+        self.assertTrue(payment.stock_liberado)
+
+    def _pending_payment(self):
+        sale = Venta.objects.create(
+            usuario=self.user, total='20000.00', metodo_pago='mercadopago',
+            estado='pendiente', estado_pago='pendiente', estado_envio='pendiente',
         )
-        return payment
-
-    def test_tarjeta_aprobada_detecta_marca_y_envia_comprobante(self):
-        payment = self.iniciar_pago_tarjeta()
-
-        response = self.client.post(
-            reverse('pago_sandbox', args=[payment.referencia]),
-            {'demo_token': 'demo_mastercard_approved'},
+        DetalleVenta.objects.create(
+            venta=sale, producto=self.product, cantidad=2,
+            precio_unitario=Decimal('10000.00'),
+        )
+        self.product.stock = 3
+        self.product.save(update_fields=['stock'])
+        return PagoSandbox.objects.create(
+            venta=sale, proveedor='mercadopago', preferencia_externa='pref-123'
         )
 
-        self.assertRedirects(response, reverse('compra_exitosa'))
+    def _signed_headers(self, data_id):
+        timestamp = str(int(time.time()))
+        request_id = 'request-webhook-123'
+        manifest = f'id:{data_id};request-id:{request_id};ts:{timestamp};'
+        signature = hmac.new(
+            b'firma-secreta-prueba', manifest.encode(), hashlib.sha256
+        ).hexdigest()
+        return {
+            'HTTP_X_SIGNATURE': f'ts={timestamp},v1={signature}',
+            'HTTP_X_REQUEST_ID': request_id,
+        }
+
+    @patch('Tienda.views._send_purchase_receipt_once', return_value=True)
+    @patch('Tienda.views.fetch_mercadopago_payment')
+    def test_webhook_firmado_aprueba_y_actualiza_el_pedido(self, fetch, _receipt):
+        payment = self._pending_payment()
+        fetch.return_value = {
+            'id': '998877', 'external_reference': payment.venta.codigo,
+            'status': 'approved', 'status_detail': 'accredited',
+            'payment_method_id': 'visa', 'card': {'last_four_digits': '1234'},
+        }
+        body = {'type': 'payment', 'data': {'id': '998877'}}
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                f'{reverse("mercadopago_webhook")}?data.id=998877',
+                data=json.dumps(body), content_type='application/json',
+                **self._signed_headers('998877'),
+            )
+
+        self.assertEqual(response.status_code, 200)
         payment.refresh_from_db()
         payment.venta.refresh_from_db()
         self.assertEqual(payment.estado, 'aprobado')
-        self.assertEqual(payment.marca_tarjeta, 'Mastercard')
-        self.assertEqual(payment.ultimos_cuatro, '4444')
         self.assertEqual(payment.venta.estado_pago, 'pagado')
-        self.assertEqual(payment.venta.estado, 'completada')
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(payment.venta.codigo, mail.outbox[0].subject)
+        self.assertEqual(payment.marca_tarjeta, 'Visa')
+        self.assertEqual(payment.ultimos_cuatro, '1234')
 
-    def test_tarjeta_rechazada_libera_stock(self):
-        payment = self.iniciar_pago_tarjeta()
+    @patch('Tienda.views.fetch_mercadopago_payment')
+    def test_webhook_rechazado_repetido_libera_stock_una_vez(self, fetch):
+        payment = self._pending_payment()
+        fetch.return_value = {
+            'id': '112233', 'external_reference': payment.venta.codigo,
+            'status': 'rejected', 'status_detail': 'cc_rejected_other_reason',
+        }
+        body = json.dumps({'type': 'payment', 'data': {'id': '112233'}})
+        url = f'{reverse("mercadopago_webhook")}?data.id=112233'
 
-        self.client.post(
-            reverse('pago_sandbox', args=[payment.referencia]),
-            {'demo_token': 'demo_mastercard_rejected'},
-        )
+        self.client.post(url, data=body, content_type='application/json', **self._signed_headers('112233'))
+        self.client.post(url, data=body, content_type='application/json', **self._signed_headers('112233'))
 
+        self.product.refresh_from_db()
         payment.refresh_from_db()
-        payment.venta.refresh_from_db()
-        self.producto.refresh_from_db()
-        self.assertEqual(payment.estado, 'rechazado')
+        self.assertEqual(self.product.stock, 5)
         self.assertTrue(payment.stock_liberado)
-        self.assertEqual(payment.venta.estado_pago, 'rechazado')
-        self.assertEqual(payment.venta.estado, 'cancelada')
-        self.assertEqual(self.producto.stock, 5)
-        self.assertEqual(len(mail.outbox), 0)
 
-    def test_tarjeta_pendiente_no_envia_comprobante(self):
-        payment = self.iniciar_pago_tarjeta()
-
-        self.client.post(
-            reverse('pago_sandbox', args=[payment.referencia]),
-            {'demo_token': 'demo_visa_pending'},
-        )
-
-        payment.refresh_from_db()
-        payment.venta.refresh_from_db()
-        self.assertEqual(payment.estado, 'pendiente')
-        self.assertEqual(payment.venta.estado_pago, 'procesando')
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_sandbox_rechaza_tarjeta_que_no_es_de_prueba(self):
-        payment = self.iniciar_pago_tarjeta()
-
+    def test_webhook_con_firma_invalida_es_rechazado(self):
         response = self.client.post(
-            reverse('pago_sandbox', args=[payment.referencia]),
-            {'demo_token': 'token_inventado'},
-            follow=True,
+            f'{reverse("mercadopago_webhook")}?data.id=44',
+            data=json.dumps({'type': 'payment', 'data': {'id': '44'}}),
+            content_type='application/json',
+            HTTP_X_SIGNATURE='ts=1,v1=invalida',
+            HTTP_X_REQUEST_ID='request-invalido',
         )
 
-        self.assertContains(response, 'no pertenece al entorno de demostración')
-        payment.refresh_from_db()
-        self.assertEqual(payment.estado, 'pendiente')
-
-    def test_pago_aprobado_repetido_no_duplica_el_comprobante(self):
-        payment = self.iniciar_pago_tarjeta()
-        url = reverse('pago_sandbox', args=[payment.referencia])
-
-        self.client.post(url, {'demo_token': 'demo_visa_approved'})
-        self.client.post(url, {'demo_token': 'demo_visa_approved'})
-
-        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(response.status_code, 401)
 
 
 class DashboardVendedorTests(TestCase):

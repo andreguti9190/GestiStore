@@ -180,10 +180,8 @@
       return;
     }
     var map = L.map(container, { scrollWheelZoom: false }).setView([-34.6037, -58.3816], 11);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
+    container.classList.add('map-grid-fallback');
+    container.setAttribute('data-map-note', 'Vista aproximada · sin imágenes externas');
     var bounds = [];
     shippingMapData.forEach(function (shipment) {
       var point = [Number(shipment.lat), Number(shipment.lng)];

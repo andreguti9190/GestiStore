@@ -98,8 +98,13 @@ GestiStore/
 
 ### Autenticación y seguridad
 - **Registro** de usuarios con validación de email único.
-- **Inicio de sesión en dos pasos (2FA)**: primero usuario + contraseña y luego un **código de 6
-  dígitos enviado por email** (vence a los 10 minutos, máximo 5 intentos y reenvío limitado a 60 s).
+- **Verificación en dos pasos (2FA) opcional por cuenta**: se activa o desactiva desde
+  **Seguridad**. Mientras está activa, el inicio de sesión pide usuario + contraseña y luego un
+  **código de 6 dígitos enviado por email** (vence a los 10 minutos, máximo 5 intentos y reenvío
+  limitado a 60 s). También solicita confirmar la identidad antes de comprar. Si está desactivada,
+  se ingresa solamente con la contraseña y el checkout no pide una confirmación extra.
+- Al crear la cuenta se puede optar por activar el doble factor desde el primer momento; si no se
+  marca, la cuenta queda habilitada directamente.
 - **Reconocimiento facial opcional con cámara**: funciona desde un navegador moderno en celular o
   PC, sin Face ID, huella, aplicación ni certificado instalado por el visitante. Se guardan
   descriptores numéricos del rostro y no fotos o videos.
@@ -117,7 +122,9 @@ GestiStore/
 - Catálogo con **buscador** y **filtro por categoría**.
 - Detalle de producto con productos relacionados.
 - Carrito de compras (guardado en sesión) y **checkout** con validación.
-- Métodos de pago: tarjeta de crédito, débito y transferencia.
+- Método de pago: **Mercado Pago Checkout Pro** (tarjeta, dinero en cuenta y otros medios disponibles).
+- Envío a domicilio con dirección escrita y **mapa automático** según la dirección (Georef + Esri);
+  si la dirección no se puede ubicar, la compra continúa sin exigir un punto manual.
 - Al confirmar la compra se **descuenta el stock** de forma atómica y se genera un **código de venta**
   (`GS-XXXXXXXX`).
 - Se envía un **comprobante de compra por email** al usuario.
@@ -201,6 +208,12 @@ python manage.py createsuperuser
 
 Luego iniciar el servidor con el script de red (ver más arriba) o con `python manage.py runserver`.
 
+### Probar Mercado Pago Checkout Pro
+
+Con `MERCADOPAGO_MODE=test`, la preferencia usa el sandbox y no procesa dinero real. Para completar una compra de prueba, abrí el checkout en una sesión privada, elegí **Ingresar con mi cuenta** y usá una cuenta de prueba de tipo **Comprador** de la misma aplicación. No uses la cuenta personal del vendedor ni el flujo invitado con un correo real, porque Mercado Pago puede finalizarlo con su pantalla genérica de error.
+
+La cuenta compradora y su código de verificación se consultan en Mercado Pago Developers, dentro de **Integraciones > aplicación > Cuentas de prueba**. Para pagos reales hay que usar credenciales productivas y `MERCADOPAGO_MODE=production`.
+
 ---
 
 ## 🧪 Tests
@@ -218,7 +231,7 @@ python manage.py test Tienda
 | `/` | Inicio | Autenticado |
 | `/login/` | Inicio de sesión | Público |
 | `/registro/` | Registro de usuario | Público |
-| `/cuenta/seguridad/` | Registrar, actualizar o eliminar reconocimiento facial | Autenticado |
+| `/cuenta/seguridad/` | Activar o desactivar 2FA, y gestionar el reconocimiento facial | Autenticado |
 | `/productos/` | Catálogo de productos | Autenticado |
 | `/carrito/` | Carrito de compras | Operador |
 | `/mis-compras/` | Historial de compras propias | Operador |

@@ -17,7 +17,7 @@
 
   <div class="auth-form">
     <div class="auth-title">Registro</div>
-    <div class="auth-sub">Completá el formulario. Te enviaremos un código por email para confirmar la cuenta.</div>
+    <div class="auth-sub">Completá el formulario para crear tu cuenta. La verificación en dos pasos es opcional.</div>
 
     {% if form.errors %}
     <div class="auth-error">
@@ -73,11 +73,18 @@
         <label>Confirmar contraseña</label>
         {{ form.password2 }}
       </div>
+      <label class="auth-checkbox" for="{{ form.activar_2fa.id_for_label }}">
+        {{ form.activar_2fa }}
+        <span>Activar verificación en dos pasos por email (recomendado).</span>
+      </label>
+      <div class="auth-help" style="margin-top:-4px;margin-bottom:12px">
+        Si la activás, te enviaremos un código para confirmar la cuenta y lo pediremos al iniciar sesión. Si la dejás desactivada, tu cuenta se crea directamente y solo usás tu contraseña.
+      </div>
       <label class="auth-checkbox" for="{{ form.acepta_terminos.id_for_label }}">
         {{ form.acepta_terminos }}
         <span>Acepto los <a href="{% url 'terminos_y_condiciones' %}" target="_blank" rel="noopener">Términos y Condiciones</a>.</span>
       </label>
-      <button type="submit" class="auth-btn" id="registration-submit">Crear cuenta y verificar email</button>
+      <button type="submit" class="auth-btn" id="registration-submit">Crear cuenta</button>
     </form>
 
     <div class="auth-footer">
