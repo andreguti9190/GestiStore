@@ -7,8 +7,38 @@
   <header class="security-header">
     <p class="legal-kicker">Cuenta</p>
     <h1>Seguridad e inicio de sesión</h1>
-    <p>Activá el reconocimiento facial con la cámara de tu celular o computadora. Es opcional y siempre podés seguir ingresando con contraseña.</p>
+    <p>Configurá cómo querés proteger tu cuenta. La verificación en dos pasos y el reconocimiento facial son opcionales; siempre podés ingresar con tu contraseña.</p>
   </header>
+
+  <section class="security-card">
+    <div class="security-card-heading">
+      <div>
+        <h2>Verificación en dos pasos</h2>
+        <p>Pedimos un código de 6 dígitos por email cuando iniciás sesión y una confirmación de identidad antes de comprar. Es opcional y podés activarla o desactivarla cuando quieras.</p>
+      </div>
+      <span class="security-badge">{% if verificacion_dos_pasos %}Activa{% else %}Opcional{% endif %}</span>
+    </div>
+
+    <div class="face-registration-state" style="{% if not verificacion_dos_pasos %}background:#f6f7fb;border-color:var(--amp-border){% endif %}">
+      <span class="face-registration-icon" aria-hidden="true" style="{% if not verificacion_dos_pasos %}background:var(--amp-muted){% endif %}">{% if verificacion_dos_pasos %}✓{% else %}i{% endif %}</span>
+      <div>
+        <strong>{% if verificacion_dos_pasos %}Tu cuenta está protegida con doble factor{% else %}El doble factor está desactivado{% endif %}</strong>
+        <span>{% if verificacion_dos_pasos %}Se solicita el código de email en cada inicio de sesión y la confirmación antes de pagar.{% else %}Ingresás solamente con tu contraseña. Podés activarlo en cualquier momento.{% endif %}</span>
+      </div>
+    </div>
+
+    <form method="post" action="{% url 'configurar_verificacion_dos_pasos' %}" style="margin-top:18px">
+      {% csrf_token %}
+      <input type="hidden" name="activar" value="{% if verificacion_dos_pasos %}0{% else %}1{% endif %}">
+      <button type="submit" class="btn {% if verificacion_dos_pasos %}btn-danger{% else %}btn-primary{% endif %}">
+        {% if verificacion_dos_pasos %}Desactivar verificación en dos pasos{% else %}Activar verificación en dos pasos{% endif %}
+      </button>
+    </form>
+
+    <div class="secure-context-note">
+      Si la activás, el código vence a los 10 minutos y podés reenviarlo cada 60 segundos. El acceso con passkey o reconocimiento facial reemplaza al código de email, porque ya funciona como un factor adicional de seguridad.
+    </div>
+  </section>
 
   <section class="security-card">
     <div class="security-card-heading">

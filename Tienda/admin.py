@@ -38,6 +38,7 @@ class PagoSandboxAdmin(admin.ModelAdmin):
     search_fields = ['venta__codigo', 'venta__usuario__username', 'referencia']
     readonly_fields = [
         'referencia', 'marca_tarjeta', 'ultimos_cuatro', 'motivo',
+        'preferencia_externa', 'pago_externo_id', 'checkout_url',
         'stock_liberado', 'comprobante_enviado_en', 'aprobado_en',
         'creado_en', 'actualizado_en',
     ]
@@ -46,11 +47,11 @@ class PagoSandboxAdmin(admin.ModelAdmin):
 @admin.register(Perfil)
 class PerfilAdmin(admin.ModelAdmin):
     list_display = [
-        'usuario', 'rol', 'fecha_nacimiento', 'responsable_nombre',
-        'responsable_dni', 'terminos_version',
+        'usuario', 'rol', 'verificacion_dos_pasos', 'fecha_nacimiento',
+        'responsable_nombre', 'responsable_dni', 'terminos_version',
         'terminos_aceptados_en', 'registro_verificado_en',
     ]
-    list_filter = ['rol']
+    list_filter = ['rol', 'verificacion_dos_pasos']
 
 
 @admin.register(SolicitudDevolucion)

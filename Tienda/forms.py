@@ -58,6 +58,10 @@ class RegistroForm(UserCreationForm):
             'required': 'Tenés que aceptar los Términos y Condiciones para crear tu cuenta.',
         },
     )
+    activar_2fa = forms.BooleanField(
+        required=False,
+        label='Proteger mi cuenta con verificación en dos pasos por email',
+    )
 
     class Meta:
         model = User
@@ -65,7 +69,7 @@ class RegistroForm(UserCreationForm):
             'username', 'email', 'fecha_nacimiento', 'responsable_nombre',
             'responsable_dni', 'responsable_parentesco', 'autorizacion_responsable',
             'password1', 'password2',
-            'acepta_terminos',
+            'acepta_terminos', 'activar_2fa',
         ]
 
     def __init__(self, *args, pending_user=None, **kwargs):

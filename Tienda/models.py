@@ -18,6 +18,14 @@ class Perfil(models.Model):
     terminos_aceptados_en = models.DateTimeField(null=True, blank=True)
     terminos_version = models.CharField(max_length=20, blank=True)
     registro_verificado_en = models.DateTimeField(null=True, blank=True)
+    verificacion_dos_pasos = models.BooleanField(
+        default=False,
+        verbose_name='Verificación en dos pasos por email',
+        help_text=(
+            'Si está activa, se solicita un código por email al iniciar sesión '
+            'y una confirmación de identidad antes de comprar.'
+        ),
+    )
 
     def __str__(self):
         return f"{self.usuario.username} - {self.get_rol_display()}"
@@ -107,7 +115,10 @@ class Producto(models.Model):
 
 
 class Venta(models.Model):
+    # Se mantienen los métodos históricos para visualizar ventas antiguas.
+    # Las compras nuevas solo se crean con Mercado Pago.
     METODO_PAGO_CHOICES = [
+        ('mercadopago', 'Mercado Pago'),
         ('tarjeta', 'Tarjeta de Crédito'),
         ('debito', 'Tarjeta de Débito'),
         ('transferencia', 'Transferencia Bancaria'),
@@ -185,9 +196,12 @@ class DetalleVenta(models.Model):
 
 
 class PagoSandbox(models.Model):
-    """Intento de pago de demostración sin almacenar datos sensibles."""
+    """Registro interno del pago, sin almacenar datos sensibles de la tarjeta."""
 
+    # Los valores históricos se conservan para que las ventas antiguas sigan
+    # mostrando su método; las compras nuevas solo usan Mercado Pago.
     PROVEEDOR_CHOICES = [
+        ('mercadopago', 'Mercado Pago'),
         ('demopay', 'DemoPay Sandbox'),
         ('transferencia', 'Transferencia bancaria'),
     ]
@@ -210,6 +224,9 @@ class PagoSandbox(models.Model):
     marca_tarjeta = models.CharField(max_length=20, blank=True)
     ultimos_cuatro = models.CharField(max_length=4, blank=True)
     motivo = models.CharField(max_length=120, blank=True)
+    preferencia_externa = models.CharField(max_length=120, blank=True)
+    pago_externo_id = models.CharField(max_length=120, blank=True, db_index=True)
+    checkout_url = models.URLField(max_length=500, blank=True)
     stock_liberado = models.BooleanField(default=False)
     comprobante_enviado_en = models.DateTimeField(null=True, blank=True)
     aprobado_en = models.DateTimeField(null=True, blank=True)
@@ -221,8 +238,8 @@ class PagoSandbox(models.Model):
 
     class Meta:
         ordering = ['-creado_en']
-        verbose_name = 'Pago de demostración'
-        verbose_name_plural = 'Pagos de demostración'
+        verbose_name = 'Pago'
+        verbose_name_plural = 'Pagos'
 
 
 class SolicitudDevolucion(models.Model):

@@ -1,13 +1,18 @@
 import logging
 import json
 import math
+import re
 import secrets
 import hashlib
 import csv
 import threading
+import unicodedata
 from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib.auth import login
@@ -17,6 +22,7 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import IntegrityError, close_old_connections, transaction
 from django.db.models import Q
@@ -25,8 +31,9 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
 from webauthn import (
     base64url_to_bytes,
     generate_authentication_options,
@@ -57,7 +64,12 @@ from .emails import (
     send_registration_code,
 )
 from .realtime import get_dashboard_revision, publish_dashboard_event
-from .payments import process_demo_card, sync_payment_from_admin
+from .payments import (
+    MercadoPagoError, apply_mercadopago_status, cancel_reserved_payment,
+    create_mercadopago_preference, fetch_mercadopago_payment,
+    mercado_pago_configured, refund_mercadopago_payment,
+    sync_payment_from_admin, validate_mercadopago_signature,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -74,6 +86,60 @@ REGISTRATION_OTP_SESSION_KEYS = (
 )
 
 TERMS_VERSION = '2026-10-19'
+
+ARGENTINA_PROVINCES = {
+    '02': 'Ciudad Autónoma de Buenos Aires',
+    '06': 'Buenos Aires',
+    '10': 'Catamarca',
+    '14': 'Córdoba',
+    '18': 'Corrientes',
+    '22': 'Chaco',
+    '26': 'Chubut',
+    '30': 'Entre Ríos',
+    '34': 'Formosa',
+    '38': 'Jujuy',
+    '42': 'La Pampa',
+    '46': 'La Rioja',
+    '50': 'Mendoza',
+    '54': 'Misiones',
+    '58': 'Neuquén',
+    '62': 'Río Negro',
+    '66': 'Salta',
+    '70': 'San Juan',
+    '74': 'San Luis',
+    '78': 'Santa Cruz',
+    '82': 'Santa Fe',
+    '86': 'Santiago del Estero',
+    '90': 'Tucumán',
+    '94': 'Tierra del Fuego, Antártida e Islas del Atlántico Sur',
+}
+
+ARGENTINA_CAPITAL_FALLBACKS = {
+    '02': ('Ciudad Autónoma de Buenos Aires', -34.6037, -58.3816),
+    '06': ('La Plata', -34.9214, -57.9544),
+    '10': ('San Fernando del Valle de Catamarca', -28.4696, -65.7852),
+    '14': ('Córdoba', -31.4201, -64.1888),
+    '18': ('Corrientes', -27.4692, -58.8306),
+    '22': ('Resistencia', -27.4514, -58.9867),
+    '26': ('Rawson', -43.3002, -65.1023),
+    '30': ('Paraná', -31.7320, -60.5238),
+    '34': ('Formosa', -26.1849, -58.1731),
+    '38': ('San Salvador de Jujuy', -24.1858, -65.2995),
+    '42': ('Santa Rosa', -36.6203, -64.2906),
+    '46': ('La Rioja', -29.4131, -66.8558),
+    '50': ('Mendoza', -32.8895, -68.8458),
+    '54': ('Posadas', -27.3621, -55.9009),
+    '58': ('Neuquén', -38.9516, -68.0591),
+    '62': ('Viedma', -40.8135, -62.9967),
+    '66': ('Salta', -24.7821, -65.4232),
+    '70': ('San Juan', -31.5375, -68.5364),
+    '74': ('San Luis', -33.3017, -66.3378),
+    '78': ('Río Gallegos', -51.6230, -69.2168),
+    '82': ('Santa Fe', -31.6333, -60.7000),
+    '86': ('Santiago del Estero', -27.7834, -64.2642),
+    '90': ('San Miguel de Tucumán', -26.8083, -65.2176),
+    '94': ('Ushuaia', -54.8019, -68.3030),
+}
 
 PASSKEY_REGISTRATION_SESSION_KEYS = (
     'passkey_registration_challenge', 'passkey_registration_created_at',
@@ -164,6 +230,14 @@ def inicio(request):
 def _clear_pending_otp(request):
     for key in OTP_SESSION_KEYS:
         request.session.pop(key, None)
+
+
+def usuario_requiere_2fa(user):
+    """La verificación en dos pasos es una preferencia de cada cuenta."""
+    try:
+        return bool(user.perfil.verificacion_dos_pasos)
+    except (Perfil.DoesNotExist, AttributeError):
+        return False
 
 
 def _masked_email(email):
@@ -416,6 +490,15 @@ def iniciar_sesion(request):
 
     if request.method == 'POST' and form.is_valid():
         user = form.get_user()
+        if not usuario_requiere_2fa(user):
+            # La cuenta eligió no usar el segundo factor: alcanza con la
+            # contraseña y se evita el paso adicional en cada ingreso.
+            login(request, user)
+            request.session.save()
+            _queue_login_notice(request, user, 'Contraseña')
+            messages.success(request, 'Inicio de sesión confirmado.')
+            return redirect(next_url)
+
         if not user.email:
             form.add_error(None, 'Tu cuenta no tiene un email registrado. Contactá al administrador.')
         else:
@@ -524,12 +607,13 @@ def registro(request):
         ).first()
     form = RegistroForm(request.POST or None, pending_user=pending_user)
     if request.method == 'POST' and form.is_valid():
+        usar_2fa = bool(form.cleaned_data.get('activar_2fa'))
         try:
             with transaction.atomic():
                 if pending_user:
                     _clear_pending_registration_otp(request)
                 usuario = form.save(commit=False)
-                usuario.is_active = False
+                usuario.is_active = not usar_2fa
                 usuario.save()
                 Perfil.objects.update_or_create(
                     usuario=usuario,
@@ -541,10 +625,12 @@ def registro(request):
                         'responsable_parentesco': form.cleaned_data.get('responsable_parentesco', '').strip(),
                         'terminos_aceptados_en': timezone.now(),
                         'terminos_version': TERMS_VERSION,
+                        'verificacion_dos_pasos': usar_2fa,
                     },
                 )
                 _clear_pending_registration_otp(request)
-                _issue_registration_code(request, usuario)
+                if usar_2fa:
+                    _issue_registration_code(request, usuario)
         except IntegrityError:
             # Dos envíos simultáneos pueden validar el mismo usuario antes de
             # que el primero termine de guardarlo. La restricción de la base
@@ -583,14 +669,24 @@ def registro(request):
                     'Ese nombre de usuario acaba de registrarse. Elegí otro o iniciá sesión.',
                 )
         except Exception:
-            logger.exception('No se pudo enviar el código de registro')
+            logger.exception('No se pudo completar el registro')
             _clear_pending_registration_otp(request)
             form.add_error(
                 None,
-                'No pudimos enviar el código de verificación. Intentá nuevamente en unos minutos.',
+                (
+                    'No pudimos enviar el código de verificación. Intentá nuevamente en unos minutos.'
+                    if usar_2fa else
+                    'No pudimos crear la cuenta. Intentá nuevamente en unos minutos.'
+                ),
             )
         else:
-            return redirect('verificar_registro')
+            if usar_2fa:
+                return redirect('verificar_registro')
+            login(request, usuario, backend='django.contrib.auth.backends.ModelBackend')
+            request.session.save()
+            _queue_login_notice(request, usuario, 'Registro sin código adicional')
+            messages.success(request, 'Tu cuenta fue creada y ya está lista para usar.')
+            return redirect('inicio')
     return render(request, 'tienda/registro.html', {'form': form})
 
 
@@ -693,7 +789,39 @@ def seguridad_cuenta(request):
     return render(request, 'tienda/seguridad_cuenta.html', {
         'credenciales': request.user.credenciales_passkey.all(),
         'credencial_facial': CredencialFacial.objects.filter(usuario=request.user).first(),
+        'verificacion_dos_pasos': usuario_requiere_2fa(request.user),
     })
+
+
+@login_required
+@require_POST
+def configurar_verificacion_dos_pasos(request):
+    perfil, _created = Perfil.objects.get_or_create(
+        usuario=request.user,
+        defaults={'rol': 'admin' if request.user.is_staff else 'operador'},
+    )
+    activar = request.POST.get('activar') == '1'
+    if activar and not request.user.email:
+        messages.error(
+            request,
+            'Necesitás tener un email registrado para activar la verificación en dos pasos.',
+        )
+        return redirect('seguridad_cuenta')
+
+    perfil.verificacion_dos_pasos = activar
+    perfil.save(update_fields=['verificacion_dos_pasos'])
+    if activar:
+        messages.success(
+            request,
+            'Verificación en dos pasos activada. Te pediremos un código al iniciar '
+            'sesión y una confirmación antes de comprar.',
+        )
+    else:
+        messages.info(
+            request,
+            'Verificación en dos pasos desactivada. Vas a ingresar solamente con tu contraseña.',
+        )
+    return redirect('seguridad_cuenta')
 
 
 @login_required
@@ -1113,7 +1241,422 @@ def confirmar_compra(request):
         'items': items,
         'total': total,
         'has_face_credential': CredencialFacial.objects.filter(usuario=request.user).exists(),
+        'requiere_verificacion_compra': usuario_requiere_2fa(request.user),
+        'argentina_provinces': [
+            {
+                'id': province_id,
+                'nombre': province_name,
+                'lat': ARGENTINA_CAPITAL_FALLBACKS[province_id][1],
+                'lng': ARGENTINA_CAPITAL_FALLBACKS[province_id][2],
+            }
+            for province_id, province_name in sorted(
+                ARGENTINA_PROVINCES.items(), key=lambda item: item[1]
+            )
+        ],
+        'mercadopago_enabled': mercado_pago_configured(),
+        'mercadopago_test_mode': settings.MERCADOPAGO_MODE == 'test',
+        'esri_geocode_url': settings.ESRI_GEOCODE_URL,
     })
+
+
+@login_required
+@require_GET
+def localidades_argentina(request):
+    """Devuelve localidades oficiales de una provincia con un respaldo mínimo."""
+    province_id = request.GET.get('provincia', '').strip()
+    province_name = ARGENTINA_PROVINCES.get(province_id)
+    if not province_name:
+        return JsonResponse({'error': 'La provincia seleccionada no es válida.'}, status=400)
+
+    cache_key = f'georef-localidades-v2-{province_id}'
+    cached = cache.get(cache_key)
+    if cached:
+        return JsonResponse(cached)
+
+    params = urlencode({
+        'provincia': province_id,
+        'max': 5000,
+        'orden': 'nombre',
+    })
+    url = f'{settings.GEOREF_API_BASE_URL}/localidades?{params}'
+    try:
+        georef_request = Request(url, headers={
+            'Accept': 'application/json',
+            'User-Agent': 'AmpereStore/1.0 (selector de envios)',
+        })
+        with urlopen(georef_request, timeout=8) as response:
+            payload = json.load(response)
+
+        localities = []
+        seen = set()
+        for locality in payload.get('localidades', []):
+            name = str(locality.get('nombre') or '').strip()
+            department = str(
+                (locality.get('departamento') or {}).get('nombre') or ''
+            ).strip()
+            locality_id = str(locality.get('id') or '').strip()
+            centroid = locality.get('centroide') or {}
+            unique_key = (name.casefold(), department.casefold())
+            if not name or not locality_id or unique_key in seen:
+                continue
+            seen.add(unique_key)
+            label = name
+            if department and department.casefold() != name.casefold():
+                label = f'{name} — {department}'
+            localities.append({
+                'id': locality_id,
+                'nombre': name,
+                'etiqueta': label,
+                'departamento': department,
+                'lat': centroid.get('lat'),
+                'lng': centroid.get('lon'),
+            })
+        if not localities:
+            raise ValueError('Georef no devolvió localidades.')
+
+        result = {
+            'provincia': {'id': province_id, 'nombre': province_name},
+            'fuente': 'georef',
+            'atribucion': 'Servicio Georef — argentina.gob.ar/georef',
+            'centro': {
+                'lat': ARGENTINA_CAPITAL_FALLBACKS[province_id][1],
+                'lng': ARGENTINA_CAPITAL_FALLBACKS[province_id][2],
+            },
+            'localidades': localities,
+        }
+        cache.set(cache_key, result, 60 * 60 * 24)
+        return JsonResponse(result)
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        logger.warning('No se pudo consultar Georef para la provincia %s', province_id)
+        fallback_name, latitude, longitude = ARGENTINA_CAPITAL_FALLBACKS[province_id]
+        result = {
+            'provincia': {'id': province_id, 'nombre': province_name},
+            'fuente': 'respaldo',
+            'aviso': 'El catálogo oficial no respondió. Mostramos la capital provincial como respaldo.',
+            'centro': {'lat': latitude, 'lng': longitude},
+            'localidades': [{
+                'id': f'fallback-{province_id}',
+                'nombre': fallback_name,
+                'etiqueta': fallback_name,
+                'departamento': '',
+                'lat': latitude,
+                'lng': longitude,
+            }],
+        }
+        cache.set(cache_key, result, 60 * 5)
+        return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def ubicacion_argentina(request):
+    """Resuelve localidad y provincia a partir de las coordenadas del mapa."""
+    try:
+        latitude = Decimal(request.GET.get('lat', ''))
+        longitude = Decimal(request.GET.get('lng', ''))
+        if not (Decimal('-90') <= latitude <= Decimal('90')
+                and Decimal('-180') <= longitude <= Decimal('180')):
+            raise ValueError
+    except (ValueError, ArithmeticError):
+        return JsonResponse({
+            'ok': False,
+            'error': 'Las coordenadas indicadas no son válidas.',
+        }, status=400)
+
+    cache_key = f'georef-ubicacion-v1-{latitude:.4f}-{longitude:.4f}'
+    cached = cache.get(cache_key)
+    if cached:
+        return JsonResponse(cached)
+
+    params = urlencode({'lat': str(latitude), 'lon': str(longitude)})
+    url = f'{settings.GEOREF_API_BASE_URL}/ubicacion?{params}'
+    try:
+        georef_request = Request(url, headers={
+            'Accept': 'application/json',
+            'User-Agent': 'AmpereStore/1.0 (punto de entrega)',
+        })
+        with urlopen(georef_request, timeout=6) as response:
+            payload = json.load(response)
+
+        location = payload.get('ubicacion') or {}
+        province_data = location.get('provincia') or {}
+        locality_data = location.get('localidad') or {}
+        census_data = location.get('localidad_censal') or {}
+        municipality_data = (
+            location.get('municipio')
+            or location.get('gobierno_local')
+            or {}
+        )
+        department_data = location.get('departamento') or {}
+        province = str(province_data.get('nombre') or '').strip()
+        locality = str(locality_data.get('nombre') or '').strip()
+        if not locality:
+            locality = str(census_data.get('nombre') or '').strip()
+        if not locality:
+            locality = str(municipality_data.get('nombre') or '').strip()
+        department = str(department_data.get('nombre') or '').strip()
+        if not locality:
+            locality = department
+        if not province and not locality:
+            raise ValueError('Georef no devolvió una ubicación.')
+
+        result = {
+            'ok': True,
+            'localidad': locality,
+            'provincia': province,
+            'departamento': department,
+            'fuente': 'georef',
+        }
+        cache.set(cache_key, result, 60 * 60 * 24)
+        return JsonResponse(result)
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        logger.warning(
+            'No se pudo resolver la ubicación %.6f, %.6f con Georef',
+            latitude, longitude,
+        )
+        result = {
+            'ok': False,
+            'localidad': '',
+            'provincia': '',
+            'departamento': '',
+            'fuente': 'no-disponible',
+        }
+        cache.set(cache_key, result, 60 * 5)
+        return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def direccion_argentina(request):
+    """Ubica una dirección escrita dentro de la provincia elegida."""
+    address = ' '.join(request.GET.get('direccion', '').split())[:180]
+    postal_code = ''.join(request.GET.get('codigo_postal', '').split())[:12]
+    province_id = request.GET.get('provincia', '').strip()
+    province_name = ARGENTINA_PROVINCES.get(province_id)
+    if len(address) < 5 or not province_name:
+        return JsonResponse({
+            'ok': False,
+            'error': 'Ingresá una dirección y elegí una provincia válida.',
+        }, status=400)
+
+    address_cache_value = f'{address.casefold()}|{postal_code.casefold()}'
+    address_hash = hashlib.sha256(address_cache_value.encode('utf-8')).hexdigest()[:24]
+    cache_key = f'geocode-direccion-v3-{province_id}-{address_hash}'
+    cached = cache.get(cache_key)
+    if cached:
+        return JsonResponse(cached)
+
+    params = urlencode({
+        'direccion': address,
+        'provincia': province_id,
+        'max': 10,
+    })
+    url = f'{settings.GEOREF_API_BASE_URL}/direcciones?{params}'
+    try:
+        georef_request = Request(url, headers={
+            'Accept': 'application/json',
+            'User-Agent': 'AmpereStore/1.0 (ubicacion de envios)',
+        })
+        try:
+            with urlopen(georef_request, timeout=8) as response:
+                payload = json.load(response)
+        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            logger.warning(
+                'Georef no pudo geocodificar la direccion "%s" en %s; se usara Esri',
+                address, province_id,
+            )
+            payload = {'direcciones': []}
+
+        matches = []
+        seen_departments = set()
+        for direction in payload.get('direcciones', []):
+            location = direction.get('ubicacion') or {}
+            try:
+                latitude = float(location.get('lat'))
+                longitude = float(location.get('lon'))
+            except (TypeError, ValueError):
+                continue
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                continue
+            locality_data = direction.get('localidad') or {}
+            census_data = direction.get('localidad_censal') or {}
+            municipality_data = (
+                direction.get('municipio')
+                or direction.get('gobierno_local')
+                or {}
+            )
+            department_data = direction.get('departamento') or {}
+            locality = str(locality_data.get('nombre') or '').strip()
+            if not locality:
+                locality = str(census_data.get('nombre') or '').strip()
+            if not locality:
+                locality = str(municipality_data.get('nombre') or '').strip()
+            department = str(department_data.get('nombre') or '').strip()
+            if not locality:
+                locality = department
+            duplicate_key = (department or locality).casefold()
+            if duplicate_key in seen_departments:
+                continue
+            seen_departments.add(duplicate_key)
+            matches.append({
+                'ok': True,
+                'lat': latitude,
+                'lng': longitude,
+                'localidad': locality,
+                'provincia': province_name,
+                'departamento': department,
+                'nomenclatura': str(direction.get('nomenclatura') or '').strip()[:250],
+                'fuente': 'georef',
+            })
+
+        if len(matches) == 1:
+            result = matches[0]
+            cache.set(cache_key, result, 60 * 60 * 24)
+            return JsonResponse(result)
+
+        # Georef suele reconocer la calle y la localidad pero dejar lat/lon en
+        # null, especialmente en PBA. Tambien puede devolver varias calles con
+        # el mismo nombre. Esri usa el codigo postal para desempatar y permite
+        # mostrar una ubicacion aproximada en vez de ocultar todo el mapa.
+        esri_params = urlencode({
+            'SingleLine': ', '.join(filter(None, (
+                address, postal_code, province_name, 'Argentina',
+            ))),
+            'countryCode': 'ARG',
+            'maxLocations': 5,
+            'outFields': 'Match_addr,City,Region,Postal',
+            'f': 'json',
+        })
+        esri_url = f'{settings.ESRI_GEOCODE_URL}?{esri_params}'
+        esri_request = Request(esri_url, headers={
+            'Accept': 'application/json',
+            'User-Agent': 'AmpereStore/1.0 (ubicacion de envios)',
+        })
+        try:
+            with urlopen(esri_request, timeout=8) as response:
+                esri_payload = json.load(response)
+        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            logger.warning(
+                'Esri no pudo geocodificar la direccion "%s" en %s',
+                address, province_id,
+            )
+            esri_payload = {'candidates': []}
+
+        def normalized(value):
+            text = unicodedata.normalize('NFKD', str(value or ''))
+            return ''.join(char for char in text if not unicodedata.combining(char)).casefold()
+
+        def region_matches(region):
+            region_value = normalized(region)
+            if province_id == '02':
+                return 'ciudad autonoma de buenos aires' in region_value
+            if province_id == '06':
+                return (
+                    'provincia de buenos aires' in region_value
+                    or region_value == 'buenos aires'
+                )
+            province_value = normalized(province_name)
+            return province_value in region_value or region_value in province_value
+
+        requested_postal_digits = ''.join(re.findall(r'\d', postal_code))
+        requested_numbers = re.findall(r'(?<!\d)\d{1,6}(?!\d)', address)
+        candidates = []
+        for candidate in esri_payload.get('candidates', []):
+            location = candidate.get('location') or {}
+            attributes = candidate.get('attributes') or {}
+            try:
+                latitude = float(location.get('y'))
+                longitude = float(location.get('x'))
+                score = float(candidate.get('score') or 0)
+            except (TypeError, ValueError):
+                continue
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                continue
+            if score < 75 or not region_matches(attributes.get('Region')):
+                continue
+            match_address = str(
+                attributes.get('Match_addr') or candidate.get('address') or ''
+            ).strip()
+            candidate_postal_digits = ''.join(
+                re.findall(r'\d', str(attributes.get('Postal') or ''))
+            )
+            postal_match = bool(
+                requested_postal_digits
+                and candidate_postal_digits == requested_postal_digits
+            )
+            number_match = any(
+                re.search(rf'(?<!\d){re.escape(number)}(?!\d)', match_address)
+                for number in requested_numbers
+            )
+            rank = (1000 if postal_match else 0) + (500 if number_match else 0) + score
+            candidates.append((rank, {
+                'ok': True,
+                'lat': latitude,
+                'lng': longitude,
+                'localidad': str(attributes.get('City') or '').strip() or province_name,
+                'provincia': province_name,
+                'departamento': '',
+                'nomenclatura': match_address[:250],
+                'fuente': 'esri',
+                'precision': 'exacta' if number_match else 'aproximada',
+            }))
+
+        if candidates:
+            result = max(candidates, key=lambda item: item[0])[1]
+            cache.set(cache_key, result, 60 * 60 * 24)
+            return JsonResponse(result)
+
+        fallback_locality, fallback_latitude, fallback_longitude = (
+            ARGENTINA_CAPITAL_FALLBACKS[province_id]
+        )
+        result = {
+            'ok': True,
+            'lat': fallback_latitude,
+            'lng': fallback_longitude,
+            'localidad': fallback_locality,
+            'provincia': province_name,
+            'departamento': '',
+            'nomenclatura': f'Punto aproximado en {province_name}',
+            'message': (
+                'No pudimos ubicar la direccion exacta. '
+                'Podes arrastrar el marcador para ajustar el punto.'
+            ),
+            'fuente': 'respaldo-provincial',
+            'precision': 'provincia',
+        }
+        cache.set(cache_key, result, 60 * 10)
+        return JsonResponse(result)
+
+        if len(matches) > 1:
+            message = (
+                'Encontramos varias localidades con esa dirección. '
+                'Revisá el código postal o continuá con la dirección escrita.'
+            )
+        else:
+            message = 'No encontramos esa dirección dentro de la provincia seleccionada.'
+        result = {
+            'ok': False,
+            'ambiguo': len(matches) > 1,
+            'localidad': '',
+            'provincia': province_name,
+            'departamento': '',
+            'message': message,
+            'fuente': 'no-disponible',
+        }
+        cache.set(cache_key, result, 60 * 10)
+        return JsonResponse(result)
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        logger.warning('No se pudo geocodificar la dirección "%s" en %s', address, province_id)
+        result = {
+            'ok': False,
+            'localidad': '',
+            'provincia': province_name,
+            'departamento': '',
+            'message': 'El servicio de mapas no respondió en este momento.',
+            'fuente': 'no-disponible',
+        }
+        cache.set(cache_key, result, 60 * 5)
+        return JsonResponse(result)
 
 
 @login_required
@@ -1175,24 +1718,28 @@ def procesar_pago(request):
     if not carrito:
         return redirect('lista_productos')
 
-    verification_method = request.POST.get('verification_method', '')
-    if verification_method == 'password':
-        account_password = request.POST.get('account_password', '')
-        if not account_password or not request.user.check_password(account_password):
-            messages.error(request, 'La contraseña de tu cuenta no es correcta.')
+    if usuario_requiere_2fa(request.user):
+        verification_method = request.POST.get('verification_method', '')
+        if verification_method == 'password':
+            account_password = request.POST.get('account_password', '')
+            if not account_password or not request.user.check_password(account_password):
+                messages.error(request, 'La contraseña de tu cuenta no es correcta.')
+                return redirect('confirmar_compra')
+        elif verification_method == 'face':
+            if not _valid_purchase_face_proof(request, carrito):
+                request.session.pop('purchase_face_auth', None)
+                messages.error(request, 'Verificá tu rostro nuevamente para confirmar esta compra.')
+                return redirect('confirmar_compra')
+        else:
+            messages.error(request, 'Elegí cómo querés confirmar tu identidad.')
             return redirect('confirmar_compra')
-    elif verification_method == 'face':
-        if not _valid_purchase_face_proof(request, carrito):
-            request.session.pop('purchase_face_auth', None)
-            messages.error(request, 'Verificá tu rostro nuevamente para confirmar esta compra.')
-            return redirect('confirmar_compra')
-    else:
-        messages.error(request, 'Elegí cómo querés confirmar tu identidad.')
-        return redirect('confirmar_compra')
 
-    metodo = request.POST.get('metodo_pago', 'tarjeta')
-    if metodo not in {'tarjeta', 'debito', 'transferencia'}:
-        messages.error(request, 'El método de pago seleccionado no es válido.')
+    metodo = 'mercadopago'
+    if request.POST.get('metodo_pago', 'mercadopago') != metodo:
+        messages.error(request, 'Por ahora solo aceptamos pagos con Mercado Pago.')
+        return redirect('confirmar_compra')
+    if not mercado_pago_configured():
+        messages.error(request, 'Mercado Pago todavía no está configurado por completo.')
         return redirect('confirmar_compra')
 
     tipo_entrega = request.POST.get('tipo_entrega', 'retiro')
@@ -1209,21 +1756,28 @@ def procesar_pago(request):
         entrega['entrega_localidad'] = request.POST.get('entrega_localidad', '').strip()[:100]
         entrega['entrega_provincia'] = request.POST.get('entrega_provincia', '').strip()[:100]
         entrega['entrega_codigo_postal'] = request.POST.get('entrega_codigo_postal', '').strip()[:12]
-        if not all((entrega['direccion_entrega'], entrega['entrega_localidad'],
-                    entrega['entrega_provincia'], entrega['entrega_codigo_postal'])):
-            messages.error(request, 'Completá la dirección, localidad, provincia y código postal.')
+        if not all((entrega['direccion_entrega'], entrega['entrega_provincia'],
+                    entrega['entrega_codigo_postal'])):
+            messages.error(request, 'Completá la dirección, provincia y código postal.')
             return redirect('confirmar_compra')
-        try:
-            latitude = Decimal(request.POST.get('entrega_latitud', ''))
-            longitude = Decimal(request.POST.get('entrega_longitud', ''))
-            if not (Decimal('-90') <= latitude <= Decimal('90')
-                    and Decimal('-180') <= longitude <= Decimal('180')):
-                raise ValueError
-        except (ValueError, ArithmeticError):
-            messages.error(request, 'Marcá en el mapa el punto aproximado de entrega.')
-            return redirect('confirmar_compra')
-        entrega['entrega_latitud'] = latitude
-        entrega['entrega_longitud'] = longitude
+        if not entrega['entrega_localidad']:
+            entrega['entrega_localidad'] = entrega['entrega_provincia']
+        latitude_raw = request.POST.get('entrega_latitud', '').strip()
+        longitude_raw = request.POST.get('entrega_longitud', '').strip()
+        if latitude_raw and longitude_raw:
+            try:
+                latitude = Decimal(latitude_raw)
+                longitude = Decimal(longitude_raw)
+                if not (Decimal('-90') <= latitude <= Decimal('90')
+                        and Decimal('-180') <= longitude <= Decimal('180')):
+                    raise ValueError
+            except (ValueError, ArithmeticError):
+                # El mapa es una ayuda opcional: la dirección escrita sigue siendo válida.
+                pass
+            else:
+                entrega['entrega_latitud'] = latitude
+                entrega['entrega_longitud'] = longitude
+
 
     # La venta y el descuento de stock se confirman como una sola operación.
     with transaction.atomic():
@@ -1252,7 +1806,7 @@ def procesar_pago(request):
         )
         payment = PagoSandbox.objects.create(
             venta=venta,
-            proveedor='transferencia' if metodo == 'transferencia' else 'demopay',
+            proveedor='mercadopago',
         )
 
         for item in carrito.values():
@@ -1270,14 +1824,19 @@ def procesar_pago(request):
             lambda: publish_dashboard_event('sale.created', venta.pk)
         )
 
+    try:
+        checkout_url = create_mercadopago_preference(payment, request)
+    except MercadoPagoError as error:
+        cancel_reserved_payment(payment, error)
+        messages.error(request, str(error))
+        return redirect('confirmar_compra')
+
     request.session['carrito'] = {}
     request.session.pop('purchase_face_auth', None)
     request.session['ultima_compra'] = venta.codigo
     request.session['comprobante_enviado'] = None
 
-    if payment.proveedor == 'demopay':
-        return redirect('pago_sandbox', referencia=payment.referencia)
-    return redirect('compra_exitosa')
+    return redirect(checkout_url)
 
 
 def _send_purchase_receipt_once(venta):
@@ -1299,41 +1858,67 @@ def _send_purchase_receipt_once(venta):
 
 @login_required
 @never_cache
-def pago_sandbox(request, referencia):
+def mercadopago_retorno(request):
+    """Vuelve de Checkout Pro y confirma el estado consultando la API."""
+    sale_code = request.GET.get('external_reference', '').strip()
+    payment_id = request.GET.get('payment_id') or request.GET.get('collection_id')
     payment = get_object_or_404(
         PagoSandbox.objects.select_related('venta', 'venta__usuario'),
-        referencia=referencia,
+        venta__codigo=sale_code,
         venta__usuario=request.user,
-        proveedor='demopay',
+        proveedor='mercadopago',
     )
-
-    if request.method == 'POST':
-        try:
-            payment, changed = process_demo_card(
-                referencia,
-                request.user,
-                request.POST.get('demo_token', ''),
-            )
-        except ValueError as error:
-            messages.error(request, str(error))
-            return redirect('pago_sandbox', referencia=referencia)
-
-        receipt_sent = None
-        if payment.estado == 'aprobado':
-            receipt_sent = _send_purchase_receipt_once(payment.venta)
-        request.session['ultima_compra'] = payment.venta.codigo
-        request.session['comprobante_enviado'] = receipt_sent
-        if changed and payment.estado == 'pendiente':
-            messages.info(request, 'El pago quedó pendiente de confirmación en el sandbox.')
+    request.session['ultima_compra'] = payment.venta.codigo
+    request.session['comprobante_enviado'] = None
+    if not payment_id:
+        messages.info(request, 'Volviste de Mercado Pago, pero el pago todavía no informó una operación.')
         return redirect('compra_exitosa')
-
-    if payment.estado in {'aprobado', 'rechazado', 'reembolsado'}:
-        request.session['ultima_compra'] = payment.venta.codigo
+    try:
+        payload = fetch_mercadopago_payment(payment_id)
+        payment, _changed = apply_mercadopago_status(payment, payload)
+    except MercadoPagoError as error:
+        messages.error(request, str(error))
         return redirect('compra_exitosa')
-    return render(request, 'tienda/pago_sandbox.html', {
-        'payment': payment,
-        'venta': payment.venta,
-    })
+    if payment.estado == 'aprobado':
+        request.session['comprobante_enviado'] = _send_purchase_receipt_once(payment.venta)
+    elif payment.estado == 'procesando':
+        messages.info(request, 'Mercado Pago está procesando el pago. Se actualizará automáticamente.')
+    return redirect('compra_exitosa')
+
+
+@csrf_exempt
+@require_POST
+def mercadopago_webhook(request):
+    """Recibe Webhooks firmados y usa la API como fuente de verdad."""
+    try:
+        payload = json.loads(request.body or b'{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'ok': False}, status=400)
+    if payload.get('type') != 'payment':
+        return JsonResponse({'ok': True})
+    data_id = str(request.GET.get('data.id') or (payload.get('data') or {}).get('id') or '')
+    if not validate_mercadopago_signature(
+        request.headers.get('x-signature', ''),
+        request.headers.get('x-request-id', ''),
+        data_id,
+    ):
+        return JsonResponse({'ok': False}, status=401)
+    try:
+        resource = fetch_mercadopago_payment(data_id)
+        sale_code = str(resource.get('external_reference') or '')
+        payment = PagoSandbox.objects.select_related('venta').get(
+            venta__codigo=sale_code,
+            proveedor='mercadopago',
+        )
+        payment, changed = apply_mercadopago_status(payment, resource)
+        if changed and payment.estado == 'aprobado':
+            _send_purchase_receipt_once(payment.venta)
+    except PagoSandbox.DoesNotExist:
+        return JsonResponse({'ok': True})
+    except MercadoPagoError:
+        logger.warning('No se pudo sincronizar el pago Mercado Pago %s', data_id)
+        return JsonResponse({'ok': False}, status=502)
+    return JsonResponse({'ok': True})
 
 
 @login_required
@@ -1425,6 +2010,22 @@ def resolver_devolucion(request, pk):
     if decision not in {'aprobada', 'rechazada'}:
         messages.error(request, 'La decisión seleccionada no es válida.')
         return redirect('historial_ventas')
+    if decision == 'aprobada':
+        preview = get_object_or_404(
+            SolicitudDevolucion.objects.select_related('venta'),
+            pk=pk,
+            estado='solicitada',
+        )
+        external_payment = PagoSandbox.objects.filter(
+            venta=preview.venta,
+            proveedor='mercadopago',
+        ).first()
+        if external_payment:
+            try:
+                refund_mercadopago_payment(external_payment)
+            except MercadoPagoError as error:
+                messages.error(request, f'No se aprobó la devolución: {error}')
+                return redirect('historial_ventas')
     try:
         with transaction.atomic():
             devolucion = get_object_or_404(
@@ -1457,8 +2058,8 @@ def asistente_consulta(request):
     """Asistente determinístico: responde sólo intenciones conocidas y datos locales."""
     intent = request.POST.get('intent', '').strip()
     if intent == 'pagos':
-        answer = ('Podés pagar con tarjeta de crédito, débito o transferencia. '
-                  'En la demostración se usa DemoPay Sandbox y nunca se procesan tarjetas reales.')
+        answer = ('Podés pagar con Mercado Pago, que se abre en su sitio seguro. '
+                  'La tienda no recibe ni guarda los datos de tu tarjeta.')
     elif intent == 'envios':
         answer = ('Elegí envío a domicilio o retiro al finalizar la compra. '
                   'El estado y el código de seguimiento aparecen en Mis compras.')

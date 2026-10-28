@@ -66,6 +66,30 @@
 .shipping-address { margin: 0; color: var(--amp-muted); font-size: .8rem; line-height: 1.55; }
 .shipping-address strong, .shipping-address b { color: var(--amp-night); }
 .purchase-map { height: 220px; margin-top: 13px; overflow: hidden; border: 1px solid var(--amp-border); border-radius: 10px; }
+.map-grid-fallback {
+  position: relative;
+  background-color: #eef8fa !important;
+  background-image:
+    linear-gradient(rgba(68, 117, 143, .13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(68, 117, 143, .13) 1px, transparent 1px),
+    radial-gradient(circle at 25% 30%, rgba(109, 92, 231, .12), transparent 38%),
+    radial-gradient(circle at 75% 70%, rgba(24, 168, 117, .12), transparent 40%) !important;
+  background-size: 36px 36px, 36px 36px, 100% 100%, 100% 100% !important;
+}
+.map-grid-fallback::after {
+  content: attr(data-map-note);
+  position: absolute;
+  z-index: 400;
+  right: 9px;
+  bottom: 9px;
+  padding: 5px 8px;
+  border: 1px solid rgba(60, 82, 115, .16);
+  border-radius: 999px;
+  color: var(--amp-muted);
+  background: rgba(255, 255, 255, .9);
+  font-size: .68rem;
+  pointer-events: none;
+}
 .return-status, .return-request { margin: 0 0 18px; padding: 14px; border: 1px solid var(--amp-border); border-radius: 11px; background: var(--amp-white); }
 .return-status { display: flex; flex-direction: column; gap: 4px; border-left: 4px solid var(--amp-primary); }
 .return-status span, .return-status p { margin: 0; color: var(--amp-muted); font-size: .78rem; }

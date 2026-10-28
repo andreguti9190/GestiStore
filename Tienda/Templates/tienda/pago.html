@@ -3,20 +3,20 @@
 {% block title %} - Pago{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% static 'tienda/css/pago.css' %}?v=20261026-2">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="{% static 'tienda/vendor/leaflet/leaflet.css' %}?v=20261027-2" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css'">
+<link rel="stylesheet" href="{% static 'tienda/css/pago.css' %}?v=20261027-4">
 
 
 <div class="pago-header">
   <h1>Finalizar compra</h1>
-  <p>Revisá tu pedido y elegí el método de pago</p>
+  <p>Revisá tu pedido y confirmá el pago con Mercado Pago</p>
 </div>
 
 <div class="pago-grid">
   <div class="pago-card">
     <h2>Método de pago</h2>
 
-    <form method="post" action="{% url 'procesar_pago' %}" id="form-pago">
+    <form method="post" action="{% url 'procesar_pago' %}" id="form-pago" autocomplete="off">
       {% csrf_token %}
 
       <section class="delivery-section">
@@ -27,76 +27,51 @@
         </div>
         <div id="delivery-address-fields">
           <div class="delivery-form-grid">
-            <label class="delivery-full">Dirección y altura<input name="direccion_entrega" maxlength="250" autocomplete="street-address" placeholder="Ej. Av. Corrientes 1234, piso 2" required></label>
-            <label>Localidad<input name="entrega_localidad" maxlength="100" autocomplete="address-level2" placeholder="Ciudad" required></label>
-            <label>Provincia<input name="entrega_provincia" maxlength="100" autocomplete="address-level1" placeholder="Provincia" required></label>
-            <label>Código postal<input name="entrega_codigo_postal" maxlength="12" autocomplete="postal-code" placeholder="C1043" required></label>
+            <label class="delivery-full">Dirección y altura<input name="direccion_entrega" id="delivery-address" maxlength="250" autocomplete="street-address" placeholder="Ej. Av. Corrientes 1234, piso 2" required></label>
+            <label>Provincia
+              <select name="entrega_provincia" id="delivery-province" data-address-url="{% url 'direccion_argentina' %}" data-search-url="{% url 'ubicacion_argentina' %}" data-esri-url="{{ esri_geocode_url|escape }}" autocomplete="address-level1" required>
+                <option value="">Seleccioná una provincia</option>
+                {% for province in argentina_provinces %}
+                <option value="{{ province.nombre }}" data-id="{{ province.id }}" data-lat="{{ province.lat }}" data-lng="{{ province.lng }}">{{ province.nombre }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Código postal<input name="entrega_codigo_postal" id="delivery-postal-code" maxlength="12" autocomplete="postal-code" placeholder="C1043" required></label>
           </div>
-          <div class="delivery-map-copy"><strong>Marcá el punto aproximado</strong><span>No enviamos tu domicilio a servicios de búsqueda externos.</span></div>
-          <div id="delivery-map" aria-label="Mapa para seleccionar punto de entrega"></div>
+          <div id="delivery-address-status" class="delivery-field-status" role="status" aria-live="polite"></div>
+          <p id="delivery-map-unavailable" class="delivery-map-unavailable" hidden>No pudimos ubicar esta dirección en el mapa. Podés continuar con la dirección escrita; la entrega se coordina con el vendedor.</p>
+          <div id="delivery-map-panel" hidden>
+            <div class="delivery-map-copy"><strong>Ubicación de la dirección</strong><span>Mapa interactivo · Esri</span></div>
+            <p class="delivery-map-help" id="delivery-map-help">Ubicamos tu dirección automáticamente. Si hace falta, arrastrá el marcador para ajustar el punto exacto de entrega.</p>
+            <div id="delivery-map" role="application" aria-label="Mapa con la ubicación aproximada de la dirección de entrega" aria-describedby="delivery-map-help"></div>
+            <div class="delivery-map-actions"><span id="delivery-map-status" role="status">Ubicación aproximada de la dirección.</span><span id="delivery-locality-label" class="delivery-locality-label"></span></div>
+            <small class="delivery-georef-credit">Mapa: © Esri — Sources: Esri, HERE, Garmin, © OpenStreetMap contributors · Datos territoriales: Servicio Georef — argentina.gob.ar/georef</small>
+          </div>
+          <input type="hidden" name="entrega_localidad" id="delivery-locality-value">
           <input type="hidden" name="entrega_latitud" id="delivery-latitude">
           <input type="hidden" name="entrega_longitud" id="delivery-longitude">
-          <div class="delivery-map-actions"><span id="delivery-map-status">Hacé clic sobre el mapa para colocar el marcador.</span><button type="button" id="delivery-demo-location">Usar punto de demostración</button></div>
         </div>
         <div id="pickup-copy" class="pickup-copy" hidden><strong>Retiro coordinado</strong><p>Cuando el pago quede aprobado, el vendedor preparará el pedido y actualizará su estado.</p></div>
       </section>
 
-      <div class="pago-metodos">
-        <label>
-          <input type="radio" name="metodo_pago" value="tarjeta" checked onchange="mostrarMetodo(this.value)">
-          <div class="metodo-btn activo" id="btn-tarjeta">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            Tarjeta
-          </div>
-        </label>
-        <label>
-          <input type="radio" name="metodo_pago" value="debito" onchange="mostrarMetodo(this.value)">
-          <div class="metodo-btn" id="btn-debito">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><circle cx="8" cy="16" r="2"/></svg>
-            Débito
-          </div>
-        </label>
-        <label>
-          <input type="radio" name="metodo_pago" value="transferencia" onchange="mostrarMetodo(this.value)">
-          <div class="metodo-btn" id="btn-transferencia">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Transferencia
-          </div>
-        </label>
-      </div>
+      <input type="hidden" name="metodo_pago" value="mercadopago">
 
-      <div id="seccion-tarjeta">
-        <div class="sandbox-intro">
-          <div class="sandbox-brand"><span>⚡</span><div><strong>DemoPay Sandbox</strong><small>Entorno seguro de demostración</small></div></div>
-          <p>Después de confirmar tu identidad te vamos a redirigir a la pasarela de prueba. Allí podrás usar tarjetas ficticias Visa, Mastercard o American Express y simular pagos aprobados, pendientes o rechazados.</p>
-          <ul>
-            <li>Detecta automáticamente la red de la tarjeta.</li>
-            <li>No acepta ni almacena tarjetas reales.</li>
-            <li>El pedido cambia de estado como en una integración real.</li>
-          </ul>
-        </div>
+      {% if not mercadopago_enabled %}
+      <div class="secure-context-note" style="margin-top:22px">
+        Mercado Pago todavía no está configurado. Un administrador debe completar las credenciales antes de aceptar pagos en línea.
       </div>
+      {% endif %}
 
-      <div id="seccion-transferencia" class="hidden">
-        <div class="transferencia-box">
-          <h3>Datos para transferencia</h3>
-          <p><strong>CBU:</strong> 0000 0000 0000 0000 0000</p>
-          <p><strong>Alias:</strong> GESTISTORE.PAGOS</p>
-          <p><strong>Titular:</strong> GestiStore S.A.</p>
-          <div class="transferencia-nota">
-            El pedido quedará pendiente hasta que el vendedor confirme la acreditación desde su panel.
-          </div>
-        </div>
-      </div>
-
+      {% if requiere_verificacion_compra %}
       <div class="pago-campo" style="margin-top:22px">
         <label>Confirmá que sos vos</label>
-        <p style="color:var(--amp-muted);font-size:.9rem;margin:4px 0 12px">Antes de acreditar la compra, verificá tu identidad con la contraseña de tu cuenta o con el rostro que registraste.</p>
+        <p style="color:var(--amp-muted);font-size:.9rem;margin:4px 0 12px">Antes de acreditar la compra, verificá tu identidad con la contraseña de tu cuenta o con el rostro que registraste. Esta confirmación se pide porque tenés activa la verificación en dos pasos.</p>
         <label class="pago-verificacion-opcion">
           <input type="radio" name="verification_method" value="password" checked>
           Confirmar con mi contraseña
         </label>
         <div id="pago-verificacion-password" class="pago-campo">
+          <input class="credential-username-field" type="text" name="account_username" value="{{ request.user.username }}" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
           <label for="account-password">Contraseña de AmpereStore</label>
           <input type="password" name="account_password" id="account-password" autocomplete="current-password">
         </div>
@@ -113,6 +88,12 @@
         {% endif %}
         <div id="face-page-status" class="face-page-status" role="status" hidden></div>
       </div>
+      {% else %}
+      <div class="secure-context-note" style="margin-top:22px">
+        Tu cuenta no tiene activa la verificación en dos pasos, así que no te pediremos una confirmación extra para pagar.
+        <a href="{% url 'seguridad_cuenta' %}">Activala desde Seguridad</a> si querés proteger tus compras.
+      </div>
+      {% endif %}
 
       <button type="submit" class="btn-pago" id="submit-payment">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -159,26 +140,376 @@
 {% include 'tienda/_facial_modal.html' %}
 
 <script>
-var deliveryMap;
-var deliveryMarker;
-function setDeliveryPoint(lat, lng) {
-  document.getElementById('delivery-latitude').value = Number(lat).toFixed(6);
-  document.getElementById('delivery-longitude').value = Number(lng).toFixed(6);
-  document.getElementById('delivery-map-status').textContent = 'Punto seleccionado: ' + Number(lat).toFixed(4) + ', ' + Number(lng).toFixed(4);
-  if (deliveryMap && window.L) {
-    if (deliveryMarker) deliveryMarker.setLatLng([lat, lng]);
-    else deliveryMarker = L.marker([lat, lng], { title: 'Punto de entrega' }).addTo(deliveryMap);
+window.loadLeafletFallback = function () {
+  var script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
+  script.onload = function () { document.dispatchEvent(new Event('leaflet-ready')); };
+  document.head.appendChild(script);
+};
+</script>
+<script src="{% static 'tienda/vendor/leaflet/leaflet.js' %}?v=20261027-2" onerror="window.loadLeafletFallback()"></script>
+<script>
+var deliveryMap = null;
+var deliveryMarker = null;
+var deliverySelectedPoint = null;
+var deliveryAddressTimer = null;
+var deliveryAddressRequest = 0;
+var deliveryLocalityTimer = null;
+var deliveryLocalityRequest = 0;
+var deliveryDefaultView = { lat: -34.6037, lng: -58.3816, zoom: 13 };
+
+function deliveryProvinceOption() {
+  var select = document.getElementById('delivery-province');
+  return select.options[select.selectedIndex] || null;
+}
+
+function deliveryProvinceFallback() {
+  var option = deliveryProvinceOption();
+  return option && option.value ? option.value : '';
+}
+
+function normalizedLocationText(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function deliveryProvincePoint(option) {
+  var lat = Number(option && option.dataset.lat);
+  var lng = Number(option && option.dataset.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat: lat, lng: lng };
+}
+
+function esriRegionMatches(option, region) {
+  var provinceId = option && option.dataset.id;
+  var regionValue = normalizedLocationText(region);
+  if (provinceId === '02') {
+    return regionValue.includes('ciudad autonoma de buenos aires')
+      || regionValue === 'ciudad de buenos aires';
+  }
+  if (provinceId === '06') {
+    return regionValue === 'buenos aires'
+      || regionValue.includes('provincia de buenos aires');
+  }
+  var provinceValue = normalizedLocationText(option && option.value);
+  return !!provinceValue && (regionValue.includes(provinceValue) || provinceValue.includes(regionValue));
+}
+
+function setDeliveryLocality(value, label) {
+  document.getElementById('delivery-locality-value').value = value || '';
+  document.getElementById('delivery-locality-label').textContent = label || '';
+}
+
+function placeDeliveryMarker(lat, lng) {
+  if (!deliveryMap) return;
+  if (!deliveryMarker) {
+    deliveryMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'delivery-map-marker',
+        html: '<span></span>',
+        iconSize: [30, 40],
+        iconAnchor: [15, 38]
+      }),
+      draggable: true,
+      keyboard: false,
+      title: 'Punto de entrega'
+    }).addTo(deliveryMap);
+    deliveryMarker.on('dragend', function () {
+      var position = deliveryMarker.getLatLng();
+      setDeliveryPoint(position.lat, position.lng, 'Punto ajustado. Buscando la localidad…');
+    });
+  } else {
+    deliveryMarker.setLatLng([lat, lng]);
   }
 }
-function initDeliveryMap() {
-  if (!window.L || deliveryMap) return;
-  deliveryMap = L.map('delivery-map', { scrollWheelZoom: false }).setView([-34.6037, -58.3816], 12);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(deliveryMap);
-  deliveryMap.on('click', function (event) { setDeliveryPoint(event.latlng.lat, event.latlng.lng); });
+
+function updateDeliveryCoordinates(lat, lng) {
+  deliverySelectedPoint = { lat: lat, lng: lng };
+  document.getElementById('delivery-latitude').value = Number(lat).toFixed(6);
+  document.getElementById('delivery-longitude').value = Number(lng).toFixed(6);
+  placeDeliveryMarker(lat, lng);
 }
+
+function clearDeliveryPoint() {
+  deliverySelectedPoint = null;
+  document.getElementById('delivery-latitude').value = '';
+  document.getElementById('delivery-longitude').value = '';
+  setDeliveryLocality('', '');
+  if (deliveryMarker) {
+    deliveryMarker.remove();
+    deliveryMarker = null;
+  }
+}
+
+function hideDeliveryMap() {
+  document.getElementById('delivery-map-panel').hidden = true;
+  clearDeliveryPoint();
+}
+
+function scheduleDeliveryLocalityLookup(lat, lng) {
+  window.clearTimeout(deliveryLocalityTimer);
+  deliveryLocalityTimer = window.setTimeout(function () {
+    lookupDeliveryLocality(lat, lng);
+  }, 650);
+}
+
+async function lookupDeliveryLocality(lat, lng) {
+  var select = document.getElementById('delivery-province');
+  var status = document.getElementById('delivery-map-status');
+  var fallback = deliveryProvinceFallback();
+  var requestNumber = ++deliveryLocalityRequest;
+  var url = select.dataset.searchUrl
+    + '?lat=' + encodeURIComponent(lat.toFixed(6))
+    + '&lng=' + encodeURIComponent(lng.toFixed(6));
+  try {
+    var providerData = await firstSuccessfulGeocode([
+      geocodeFromStore(address, option, postalCode),
+      geocodeFromBrowser(address, option, postalCode)
+    ]);
+    var response = { ok: true, json: function () { return Promise.resolve(providerData); } };
+    if (!response.ok) throw new Error('No se pudo ubicar el punto.');
+    var data = await response.json();
+    if (requestNumber !== deliveryLocalityRequest) return;
+    if (data.ok && data.localidad) {
+      setDeliveryLocality(data.localidad, data.localidad + (data.provincia ? ', ' + data.provincia : ''));
+      status.textContent = 'Punto ajustado en ' + data.localidad + '.';
+    } else if (data.ok && data.provincia) {
+      setDeliveryLocality(data.provincia, data.provincia);
+      status.textContent = 'Punto ajustado en ' + data.provincia + '.';
+    } else {
+      setDeliveryLocality(fallback, fallback);
+      status.textContent = 'Punto ajustado. Usaremos la provincia indicada para la entrega.';
+    }
+  } catch (error) {
+    if (requestNumber !== deliveryLocalityRequest) return;
+    setDeliveryLocality(fallback, fallback);
+    status.textContent = 'Punto ajustado. Usaremos la provincia indicada para la entrega.';
+  }
+}
+
+function setDeliveryPoint(lat, lng, message) {
+  lat = Number(lat);
+  lng = Number(lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  updateDeliveryCoordinates(lat, lng);
+  document.getElementById('delivery-map-status').textContent = message || 'Punto ajustado. Buscando la localidad…';
+  setDeliveryLocality(deliveryProvinceFallback(), deliveryProvinceFallback());
+  scheduleDeliveryLocalityLookup(lat, lng);
+}
+
+function centerDeliveryMap(lat, lng, zoom) {
+  if (!deliveryMap) return;
+  deliveryMap.setView([Number(lat), Number(lng)], zoom || 13);
+}
+
+function initDeliveryMap() {
+  var mapNode = document.getElementById('delivery-map');
+  if (!mapNode || typeof L === 'undefined') return false;
+  if (!deliveryMap) {
+    deliveryMap = L.map(mapNode, {
+      center: [deliveryDefaultView.lat, deliveryDefaultView.lng],
+      zoom: deliveryDefaultView.zoom,
+      zoomControl: true,
+      scrollWheelZoom: false
+    });
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> — Sources: Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
+    }).addTo(deliveryMap);
+    deliveryMap.on('click', function (event) {
+      setDeliveryPoint(event.latlng.lat, event.latlng.lng);
+    });
+  }
+  window.setTimeout(function () {
+    if (deliveryMap) deliveryMap.invalidateSize();
+  }, 120);
+  return true;
+}
+
+function showDeliveryMap(lat, lng, data, zoom) {
+  zoom = zoom || 16;
+  document.getElementById('delivery-map-panel').hidden = false;
+  document.getElementById('delivery-map-unavailable').hidden = true;
+  if (!initDeliveryMap()) {
+    document.getElementById('delivery-map-status').textContent = 'Cargando el mapa interactivo.';
+    return false;
+  }
+  centerDeliveryMap(lat, lng, zoom);
+  updateDeliveryCoordinates(lat, lng);
+  var locality = data.localidad || deliveryProvinceFallback();
+  var province = data.provincia || deliveryProvinceFallback();
+  setDeliveryLocality(locality, locality ? locality + (province && province !== locality ? ', ' + province : '') : province);
+  document.getElementById('delivery-map-status').textContent = data.nomenclatura
+    ? 'Ubicación aproximada: ' + data.nomenclatura
+    : 'Ubicación aproximada de la dirección.';
+  window.setTimeout(function () {
+    if (deliveryMap) {
+      deliveryMap.invalidateSize();
+      deliveryMap.setView([Number(lat), Number(lng)], zoom);
+    }
+  }, 120);
+  return true;
+}
+
+function showProvinceFallback(option, message) {
+  var point = deliveryProvincePoint(option);
+  if (!point) return false;
+  var province = option.value || '';
+  showDeliveryMap(point.lat, point.lng, {
+    localidad: province,
+    provincia: province,
+    nomenclatura: ''
+  }, 7);
+  document.getElementById('delivery-map-status').textContent =
+    'Punto aproximado en ' + province + '. Podés arrastrarlo para ajustarlo.';
+  if (message) document.getElementById('delivery-address-status').textContent = message;
+  return true;
+}
+
+function firstSuccessfulGeocode(promises) {
+  return new Promise(function (resolve, reject) {
+    var pending = promises.length;
+    var lastError = new Error('No se pudo ubicar la dirección.');
+    promises.forEach(function (promise) {
+      Promise.resolve(promise).then(resolve).catch(function (error) {
+        lastError = error;
+        pending -= 1;
+        if (!pending) reject(lastError);
+      });
+    });
+  });
+}
+
+async function geocodeFromStore(address, option, postalCode) {
+  var response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!response.ok) throw new Error('La tienda no pudo geocodificar la dirección.');
+  var data = await response.json();
+  if (!data.ok || !Number.isFinite(Number(data.lat)) || !Number.isFinite(Number(data.lng))) {
+    throw new Error(data.message || 'La tienda no encontró la dirección.');
+  }
+  if (data.precision === 'provincia') {
+    throw new Error(data.message || 'La tienda solo pudo ubicar la provincia.');
+  }
+  return data;
+}
+
+async function geocodeFromBrowser(address, option, postalCode) {
+  var endpoint = document.getElementById('delivery-province').dataset.esriUrl;
+  if (!endpoint) throw new Error('No hay un geocodificador alternativo configurado.');
+  var params = new URLSearchParams({
+    SingleLine: [address, postalCode, option.value, 'Argentina'].filter(Boolean).join(', '),
+    countryCode: 'ARG',
+    maxLocations: '5',
+    outFields: 'Match_addr,City,Region,Postal',
+    f: 'json'
+  });
+  var response = await fetch(endpoint + '?' + params.toString(), {
+    headers: { 'Accept': 'application/json' },
+    mode: 'cors'
+  });
+  if (!response.ok) throw new Error('El geocodificador alternativo no respondió.');
+  var payload = await response.json();
+  var requestedPostal = String(postalCode || '').replace(/\D/g, '');
+  var requestedNumbers = String(address).match(/\d{1,6}/g) || [];
+  var candidates = (payload.candidates || []).filter(function (candidate) {
+    var location = candidate.location || {};
+    var attributes = candidate.attributes || {};
+    return Number(candidate.score || 0) >= 70
+      && Number.isFinite(Number(location.y))
+      && Number.isFinite(Number(location.x))
+      && esriRegionMatches(option, attributes.Region);
+  }).map(function (candidate) {
+    var attributes = candidate.attributes || {};
+    var matchAddress = String(attributes.Match_addr || candidate.address || '');
+    var candidatePostal = String(attributes.Postal || '').replace(/\D/g, '');
+    var postalMatch = !!requestedPostal && requestedPostal === candidatePostal;
+    var numberMatch = requestedNumbers.some(function (number) {
+      return new RegExp('(^|\\D)' + number + '(\\D|$)').test(matchAddress);
+    });
+    return {
+      rank: (postalMatch ? 1000 : 0) + (numberMatch ? 500 : 0) + Number(candidate.score || 0),
+      data: {
+        ok: true,
+        lat: Number(candidate.location.y),
+        lng: Number(candidate.location.x),
+        localidad: String(attributes.City || '').trim() || option.value,
+        provincia: option.value,
+        nomenclatura: matchAddress,
+        fuente: 'esri-navegador'
+      }
+    };
+  }).sort(function (a, b) { return b.rank - a.rank; });
+  if (!candidates.length) throw new Error('No encontramos esa dirección en la provincia seleccionada.');
+  return candidates[0].data;
+}
+
+async function geocodeDeliveryAddress(address, option, requestNumber) {
+  var status = document.getElementById('delivery-address-status');
+  var postalCode = document.getElementById('delivery-postal-code').value.trim();
+  var url = document.getElementById('delivery-province').dataset.addressUrl
+    + '?direccion=' + encodeURIComponent(address)
+    + '&provincia=' + encodeURIComponent(option.dataset.id)
+    + '&codigo_postal=' + encodeURIComponent(postalCode);
+  try {
+    var response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!response.ok) throw new Error('No se pudo geocodificar la dirección.');
+    var data = await response.json();
+    if (requestNumber !== deliveryAddressRequest) return;
+    if (!data.ok || !Number.isFinite(Number(data.lat)) || !Number.isFinite(Number(data.lng))) {
+      hideDeliveryMap();
+      document.getElementById('delivery-map-unavailable').hidden = false;
+      status.textContent = data.message || 'No pudimos ubicar la dirección exacta en el mapa. Podés continuar con la dirección escrita.';
+      return;
+    }
+    if (data.precision === 'provincia') {
+      showDeliveryMap(Number(data.lat), Number(data.lng), data, 7);
+      document.getElementById('delivery-map-unavailable').hidden = false;
+      status.textContent = data.message || 'Mostramos un punto provincial aproximado. Podés arrastrarlo para ajustarlo.';
+      return;
+    }
+    showDeliveryMap(Number(data.lat), Number(data.lng), data);
+    status.textContent = 'Ubicación aproximada encontrada.';
+  } catch (error) {
+    if (requestNumber !== deliveryAddressRequest) return;
+    showProvinceFallback(option);
+    document.getElementById('delivery-map-unavailable').hidden = false;
+    status.textContent = 'No pudimos ubicar la dirección exacta en el mapa. Podés continuar con la dirección escrita.';
+  }
+}
+
+function scheduleAddressGeocode() {
+  window.clearTimeout(deliveryAddressTimer);
+  deliveryAddressRequest += 1;
+  var requestNumber = deliveryAddressRequest;
+  var address = document.getElementById('delivery-address').value.trim();
+  var option = deliveryProvinceOption();
+  var status = document.getElementById('delivery-address-status');
+  var unavailable = document.getElementById('delivery-map-unavailable');
+
+  if (!address) {
+    if (option && option.value && option.dataset.id) {
+      showProvinceFallback(option);
+    } else {
+      hideDeliveryMap();
+    }
+    unavailable.hidden = true;
+    status.textContent = 'Ingresá la dirección para ubicarla en el mapa.';
+    return;
+  }
+  if (!option || !option.value || !option.dataset.id) {
+    hideDeliveryMap();
+    unavailable.hidden = true;
+    status.textContent = 'Elegí una provincia para ubicar la dirección en el mapa.';
+    return;
+  }
+
+  status.textContent = 'Buscando la dirección en el mapa…';
+  showProvinceFallback(option);
+  unavailable.hidden = true;
+  deliveryAddressTimer = window.setTimeout(function () {
+    geocodeDeliveryAddress(address, option, requestNumber);
+  }, 850);
+}
+
 function updateDeliveryMethod() {
   var method = document.querySelector('input[name=tipo_entrega]:checked').value;
   var address = document.getElementById('delivery-address-fields');
@@ -186,19 +517,22 @@ function updateDeliveryMethod() {
   var isShipping = method === 'envio';
   address.hidden = !isShipping;
   pickup.hidden = isShipping;
-  address.querySelectorAll('input:not([type=hidden])').forEach(function (input) { input.required = isShipping; });
-  if (isShipping) window.setTimeout(function () { initDeliveryMap(); if (deliveryMap) deliveryMap.invalidateSize(); }, 0);
+  address.querySelectorAll('input:not([type=hidden]), select').forEach(function (field) { field.required = isShipping; });
+  if (isShipping) {
+    scheduleAddressGeocode();
+  } else {
+    hideDeliveryMap();
+    document.getElementById('delivery-address-status').textContent = '';
+    document.getElementById('delivery-map-unavailable').hidden = true;
+  }
 }
-document.querySelectorAll('input[name=tipo_entrega]').forEach(function (input) { input.addEventListener('change', updateDeliveryMethod); });
-document.getElementById('delivery-demo-location').addEventListener('click', function () { setDeliveryPoint(-34.6037, -58.3816); });
-updateDeliveryMethod();
 
-function mostrarMetodo(val) {
-  document.querySelectorAll('.metodo-btn').forEach(b => b.classList.remove('activo'));
-  document.getElementById('btn-' + val).classList.add('activo');
-  document.getElementById('seccion-tarjeta').style.display = (val === 'transferencia') ? 'none' : 'block';
-  document.getElementById('seccion-transferencia').style.display = (val === 'transferencia') ? 'block' : 'none';
-}
+document.querySelectorAll('input[name=tipo_entrega]').forEach(function (input) { input.addEventListener('change', updateDeliveryMethod); });
+document.getElementById('delivery-address').addEventListener('input', scheduleAddressGeocode);
+document.getElementById('delivery-province').addEventListener('change', scheduleAddressGeocode);
+document.getElementById('delivery-postal-code').addEventListener('input', scheduleAddressGeocode);
+document.addEventListener('leaflet-ready', scheduleAddressGeocode);
+updateDeliveryMethod();
 
 function actualizarVerificacionPago() {
   var method = document.querySelector('input[name=verification_method]:checked');
@@ -219,8 +553,6 @@ document.getElementById('form-pago').addEventListener('submit', function () {
 
 {% endblock %}
 {% block extra_js %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script>if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initDeliveryMap); else initDeliveryMap();</script>
 {% if has_face_credential %}
 <script src="{% static 'tienda/vendor/face-api/face-api.js' %}"></script>
 <script src="{% static 'tienda/js/reconocimiento-facial.js' %}?v=20261019-4" data-model-url="{% static 'tienda/vendor/face-api/models' %}"></script>

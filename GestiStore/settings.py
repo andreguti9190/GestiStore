@@ -60,6 +60,31 @@ if os.getenv('DJANGO_SECURE_COOKIES', '').lower() == 'true':
 # Si queda vacía, Django usa automáticamente el host de la solicitud actual.
 PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
 
+# Mercado Pago Checkout Pro. La clave privada se usa exclusivamente desde el
+# servidor; nunca se envía al navegador ni se guarda en la base de datos.
+MERCADOPAGO_ACCESS_TOKEN = os.getenv('MERCADOPAGO_ACCESS_TOKEN', '').strip()
+MERCADOPAGO_PUBLIC_KEY = os.getenv('MERCADOPAGO_PUBLIC_KEY', '').strip()
+MERCADOPAGO_WEBHOOK_SECRET = os.getenv('MERCADOPAGO_WEBHOOK_SECRET', '').strip()
+MERCADOPAGO_MODE = os.getenv('MERCADOPAGO_MODE', 'test').strip().lower()
+MERCADOPAGO_API_BASE_URL = os.getenv(
+    'MERCADOPAGO_API_BASE_URL',
+    'https://api.mercadopago.com',
+).rstrip('/')
+
+# Catálogo territorial oficial de Argentina. Se mantiene configurable para
+# poder cambiar de instancia sin modificar el código de la tienda.
+GEOREF_API_BASE_URL = os.getenv(
+    'GEOREF_API_BASE_URL',
+    'https://apis.datos.gob.ar/georef/api/v2.0',
+).rstrip('/')
+
+# Respaldo para direcciones que Georef reconoce pero devuelve sin coordenadas
+# o con varias localidades posibles. No requiere una clave para esta demo.
+ESRI_GEOCODE_URL = os.getenv(
+    'ESRI_GEOCODE_URL',
+    'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates',
+).strip()
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

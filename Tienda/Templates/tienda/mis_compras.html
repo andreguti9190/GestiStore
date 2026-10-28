@@ -3,7 +3,7 @@
 {% block title %} - Mis compras{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% static 'tienda/css/mis_compras.css' %}?v=20261026-2">
+<link rel="stylesheet" href="{% static 'tienda/css/mis_compras.css' %}?v=20261026-3">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
 <div class="mis-compras-header">
@@ -94,7 +94,8 @@ document.querySelectorAll('.purchase-map').forEach(function (node) {
   var lat = Number(node.dataset.lat.replace(',', '.'));
   var lng = Number(node.dataset.lng.replace(',', '.'));
   var map = L.map(node, { scrollWheelZoom: false, dragging: false }).setView([lat, lng], 14);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  node.classList.add('map-grid-fallback');
+  node.setAttribute('data-map-note', 'Vista aproximada · sin imágenes externas');
   L.marker([lat, lng], { title: 'Entrega ' + node.dataset.code }).addTo(map).bindPopup('Punto aproximado de entrega');
 });
 </script>

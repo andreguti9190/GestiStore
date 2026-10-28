@@ -248,6 +248,30 @@ html[data-theme="dark"] .shipping-enviado { background: #1d3558; }
 .shipping-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(210px, .65fr); padding: 0; overflow: hidden; }
 #seller-shipping-map { min-height: 390px; background: var(--surface-2); }
 #seller-shipping-map.map-unavailable { display: grid; place-items: center; padding: 35px; color: var(--muted); text-align: center; }
+.map-grid-fallback {
+  position: relative;
+  background-color: #eef8fa !important;
+  background-image:
+    linear-gradient(rgba(68, 117, 143, .13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(68, 117, 143, .13) 1px, transparent 1px),
+    radial-gradient(circle at 25% 30%, rgba(109, 92, 231, .12), transparent 38%),
+    radial-gradient(circle at 75% 70%, rgba(24, 168, 117, .12), transparent 40%) !important;
+  background-size: 36px 36px, 36px 36px, 100% 100%, 100% 100% !important;
+}
+.map-grid-fallback::after {
+  content: attr(data-map-note);
+  position: absolute;
+  z-index: 400;
+  right: 10px;
+  bottom: 10px;
+  padding: 5px 9px;
+  border: 1px solid rgba(60, 82, 115, .16);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, .9);
+  font-size: .7rem;
+  pointer-events: none;
+}
 .shipping-overview { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-left: 1px solid var(--line); }
 .shipping-overview > a { display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid var(--line); border-radius: 9px; transition: .15s; }
 .shipping-overview > a:hover { border-color: var(--purple); transform: translateX(-2px); }
