@@ -319,6 +319,7 @@
   window.addEventListener('resize', function () { window.clearTimeout(resizeTimer); resizeTimer = window.setTimeout(drawAllCharts, 100); });
 
   var websocketPath = document.body.dataset.websocketUrl;
+  var revisionPath = document.body.dataset.revisionUrl;
   var liveRevision = document.body.dataset.liveRevision;
   var liveRefreshRunning = false;
   var pendingRevision = null;
@@ -473,12 +474,40 @@
     });
   }
 
+  async function pollDashboardRevision() {
+    if (!revisionPath || document.hidden || liveRefreshRunning) return;
+    try {
+      var response = await fetch(revisionPath, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) return;
+      var payload = await response.json();
+      if (payload.revision && payload.revision !== liveRevision) {
+        pendingRevision = payload.revision;
+        flushPendingRefresh();
+      }
+    } catch (error) {
+      // El WebSocket sigue siendo el canal principal; el polling es respaldo.
+    }
+  }
+
+  if (revisionPath) {
+    window.setInterval(pollDashboardRevision, 15000);
+  }
+
   if (websocketPath && 'WebSocket' in window) {
     connectDashboardSocket();
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) {
         connectDashboardSocket();
         flushPendingRefresh();
+        pollDashboardRevision();
       }
     });
   } else {

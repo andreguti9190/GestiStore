@@ -4,6 +4,9 @@ Django settings for GestiStore project.
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,9 +26,20 @@ def _load_local_env(path):
             os.environ.setdefault(key, value)
 
 
-_load_local_env(BASE_DIR / '.env')
+configured_env_file = os.getenv('GESTISTORE_ENV_FILE', '').strip()
+if configured_env_file:
+    configured_env_path = Path(configured_env_file)
+    if not configured_env_path.is_absolute():
+        configured_env_path = BASE_DIR / configured_env_path
+    _load_local_env(configured_env_path)
+else:
+    _load_local_env(BASE_DIR / '.env')
 
-SECRET_KEY = 'django-insecure-3y(nhx64%j#$t9w)%$nk5gxrror12k%2kr!z2=m^kg2l*^nng3'
+IS_VERCEL = os.getenv('VERCEL', '').lower() == '1'
+LOCAL_SECRET_KEY = 'django-insecure-3y(nhx64%j#$t9w)%$nk5gxrror12k%2kr!z2=m^kg2l*^nng3'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', LOCAL_SECRET_KEY)
+if IS_VERCEL and SECRET_KEY == LOCAL_SECRET_KEY:
+    raise ImproperlyConfigured('Configurá DJANGO_SECRET_KEY en Vercel antes de desplegar.')
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
@@ -39,16 +53,29 @@ ALLOWED_HOSTS = [
     ).split(',')
     if host.strip()
 ]
+for vercel_host in (
+    os.getenv('VERCEL_URL', ''),
+    os.getenv('VERCEL_PROJECT_PRODUCTION_URL', ''),
+):
+    if vercel_host and vercel_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(vercel_host)
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip().rstrip('/')
     for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
     if origin.strip()
 ]
+for vercel_host in (
+    os.getenv('VERCEL_URL', ''),
+    os.getenv('VERCEL_PROJECT_PRODUCTION_URL', ''),
+):
+    vercel_origin = f'https://{vercel_host}' if vercel_host else ''
+    if vercel_origin and vercel_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(vercel_origin)
 
 # El iniciador fácil recibe tráfico HTTPS desde un túnel que se conecta al
 # servidor por loopback. Solo en ese modo confiamos en X-Forwarded-Proto.
-if os.getenv('TRUST_PROXY_HEADERS', '').lower() == 'true':
+if IS_VERCEL or os.getenv('TRUST_PROXY_HEADERS', '').lower() == 'true':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 if os.getenv('DJANGO_SECURE_COOKIES', '').lower() == 'true':
@@ -59,6 +86,13 @@ if os.getenv('DJANGO_SECURE_COOKIES', '').lower() == 'true':
 # iniciadores la configuran automáticamente.
 # Si queda vacía, Django usa automáticamente el host de la solicitud actual.
 PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
+if not PUBLIC_BASE_URL:
+    vercel_public_host = (
+        os.getenv('VERCEL_PROJECT_PRODUCTION_URL', '')
+        or os.getenv('VERCEL_URL', '')
+    )
+    if vercel_public_host:
+        PUBLIC_BASE_URL = f'https://{vercel_public_host}'
 
 # Mercado Pago Checkout Pro. La clave privada se usa exclusivamente desde el
 # servidor; nunca se envía al navegador ni se guarda en la base de datos.
@@ -127,13 +161,45 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'GestiStore.wsgi.application'
+ASGI_APPLICATION = 'GestiStore.asgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+if IS_VERCEL and not DATABASE_URL:
+    raise ImproperlyConfigured(
+        'Configurá DATABASE_URL en Vercel (por ejemplo, conectando Neon).'
+    )
+if DATABASE_URL:
+    parsed_database = urlparse(DATABASE_URL)
+    if parsed_database.scheme not in {'postgres', 'postgresql'}:
+        raise ImproperlyConfigured('DATABASE_URL debe ser una URL de PostgreSQL.')
+    database_options = {
+        key: values[-1]
+        for key, values in parse_qs(parsed_database.query).items()
+        if values
     }
-}
+    if IS_VERCEL:
+        database_options.setdefault('sslmode', 'require')
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': unquote(parsed_database.path.lstrip('/')),
+            'USER': unquote(parsed_database.username or ''),
+            'PASSWORD': unquote(parsed_database.password or ''),
+            'HOST': parsed_database.hostname,
+            'PORT': parsed_database.port or 5432,
+            'OPTIONS': database_options,
+            # Las Functions escalan horizontalmente; no conservamos conexiones
+            # entre invocaciones y dejamos el pooling al proveedor serverless.
+            'CONN_MAX_AGE': 0,
+        }
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -149,10 +215,28 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'Tienda', 'static')]
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 SERVE_MEDIA_FILES = os.getenv('SERVE_MEDIA_FILES', '').lower() == 'true'
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
+if os.getenv('BLOB_STORE_ID') or os.getenv('BLOB_READ_WRITE_TOKEN'):
+    STORAGES['default'] = {
+        'BACKEND': 'Tienda.storage.VercelBlobStorage',
+    }
+elif IS_VERCEL:
+    raise ImproperlyConfigured(
+        'Conectá un Vercel Blob público para conservar las imágenes de productos.'
+    )
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
@@ -173,6 +257,22 @@ DEFAULT_FROM_EMAIL = os.getenv(
     f'AmpereStore <{EMAIL_HOST_USER}>' if EMAIL_HOST_USER else 'AmpereStore <noreply@localhost>',
 )
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '15'))
+EMAIL_NOTICES_BACKGROUND = os.getenv(
+    'EMAIL_NOTICES_BACKGROUND', 'false' if IS_VERCEL else 'true'
+).lower() == 'true'
+
+# Asistente con OpenAI. La clave se mantiene exclusivamente en el servidor.
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
+OPENAI_CHAT_MODEL = os.getenv('OPENAI_CHAT_MODEL', 'gpt-6-luna').strip()
+OPENAI_RESPONSES_URL = os.getenv(
+    'OPENAI_RESPONSES_URL', 'https://api.openai.com/v1/responses'
+).strip()
+OPENAI_TIMEOUT = int(os.getenv('OPENAI_TIMEOUT', '25'))
+OPENAI_ASSISTANT_RATE_LIMIT = int(os.getenv('OPENAI_ASSISTANT_RATE_LIMIT', '12'))
+OPENAI_ASSISTANT_RATE_WINDOW = int(os.getenv('OPENAI_ASSISTANT_RATE_WINDOW', '300'))
+OPENAI_INCLUDE_STORE_CONTEXT = os.getenv(
+    'OPENAI_INCLUDE_STORE_CONTEXT', 'false'
+).lower() == 'true'
 
 # Segundo factor por email.
 EMAIL_OTP_EXPIRY_SECONDS = 600
@@ -202,3 +302,42 @@ IP_GEOLOCATION_URL_TEMPLATE = os.getenv(
 PASSWORD_RESET_TIMEOUT = 3600
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'same-origin'
+    if IS_VERCEL:
+        SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', 'true').lower() == 'true'
+        SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_SECURE_HSTS_SECONDS', '3600'))
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv(
+            'DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS', 'false'
+        ).lower() == 'true'
+
+# El inicio fácil guarda las excepciones reales aunque DEBUG esté desactivado,
+# para que un error 500 no quede reducido a una pantalla sin información.
+AMPERESTORE_ERROR_LOG = os.getenv('AMPERESTORE_ERROR_LOG', '').strip()
+if AMPERESTORE_ERROR_LOG:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'amperestore_error_file': {
+                'class': 'logging.FileHandler',
+                'filename': AMPERESTORE_ERROR_LOG,
+                'encoding': 'utf-8',
+                'level': 'ERROR',
+            },
+        },
+        'loggers': {
+            'django.request': {
+                'handlers': ['amperestore_error_file'],
+                'level': 'ERROR',
+                'propagate': True,
+            },
+        },
+    }

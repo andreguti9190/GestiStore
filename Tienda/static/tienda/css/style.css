@@ -27,7 +27,15 @@
   --amp-radius: 16px;
   /* Índigo para texto pequeño sobre botones: mejor contraste que el azul medio. */
   --amp-action: #455892;
+  --amp-primary-strong: #455892;
+  --amp-accent: #ad7d43;
+  --amp-copper: #ad7d43;
+  --amp-bg: #f3f7fb;
+  --amp-surface: #ffffff;
+  --amp-surface-2: #edf3f9;
+  --amp-text-secondary: #52617c;
   --amp-heading-font: 'Poppins', 'Segoe UI', Arial, sans-serif;
+  --amp-body-font: 'Inter', 'Noto Sans', 'Segoe UI', Arial, sans-serif;
   --amp-header-height: 80px;
   color-scheme: light;
 }
@@ -57,6 +65,13 @@
   --amp-shadow: 0 4px 18px rgba(0, 0, 0, .35);
   --amp-shadow-hover: 0 12px 30px rgba(0, 0, 0, .5);
   --amp-action: #7a8bd6;
+  --amp-primary-strong: #6b82d9;
+  --amp-accent: #d3a66d;
+  --amp-copper: #c99a5a;
+  --amp-bg: #0b1020;
+  --amp-surface: #151b30;
+  --amp-surface-2: #202842;
+  --amp-text-secondary: #a9b0c8;
   color-scheme: dark;
 }
 
@@ -743,6 +758,14 @@ button, input, select, textarea { font: inherit; }
 .assistant-bubble.error { color: var(--amp-danger); }
 #assistant-form { padding: 13px 14px 15px; }
 #assistant-form > p { margin: 0 0 9px; color: var(--amp-muted); font-size: .73rem; }
+.assistant-compose-label { display: block; margin: 0 0 6px; color: var(--amp-text-secondary); font-size: .72rem; font-weight: 600; }
+.assistant-compose { display: flex; gap: 7px; margin-bottom: 12px; }
+.assistant-compose input { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--amp-border); border-radius: 10px; background: var(--amp-surface); color: var(--amp-text); font-size: .78rem; }
+.assistant-compose input:focus { border-color: var(--amp-primary); box-shadow: var(--amp-ring); outline: 0; }
+.assistant-compose button { flex: 0 0 auto; padding: 8px 11px; border: 0; border-radius: 10px; background: var(--amp-primary-strong); color: #fff; cursor: pointer; font-size: .75rem; font-weight: 700; }
+.assistant-compose button:hover { filter: brightness(.94); }
+.assistant-panel[aria-busy="true"] .assistant-compose button { opacity: .65; cursor: wait; }
+.assistant-privacy { display: block; margin: -5px 0 11px; color: var(--amp-text-secondary); font-size: .64rem; line-height: 1.4; }
 .assistant-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .assistant-options button { padding: 7px 9px; border: 1px solid var(--amp-border); border-radius: 999px; color: var(--amp-indigo); background: var(--amp-white); cursor: pointer; font-size: .72rem; }
 .assistant-options button:hover { border-color: var(--amp-primary); background: var(--amp-ice); }
@@ -1037,5 +1060,66 @@ form textarea:focus {
   color: var(--amp-text);
   border-color: var(--amp-border-strong);
   background: var(--amp-surface-2);
+}
+
+/* Liquid glass legible: mantiene profundidad sin perder contraste. */
+.header {
+  background: rgba(255, 255, 255, .94);
+  border-bottom-color: rgba(135, 168, 208, .48);
+  box-shadow: 0 8px 28px rgba(31, 42, 73, .10);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+}
+[data-theme="dark"] .header {
+  background: rgba(15, 21, 39, .94);
+  border-bottom-color: rgba(138, 165, 214, .25);
+}
+
+.mobile-menu {
+  background: rgba(255, 255, 255, .96);
+  border-bottom-color: rgba(135, 168, 208, .48);
+  box-shadow: 0 18px 42px rgba(31, 42, 73, .18);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+}
+[data-theme="dark"] .mobile-menu {
+  background: rgba(15, 21, 39, .96);
+  border-bottom-color: rgba(138, 165, 214, .25);
+}
+
+.store-assistant .assistant-panel {
+  background: rgba(255, 255, 255, .97);
+  border-color: rgba(135, 168, 208, .58);
+  box-shadow: 0 22px 60px rgba(31, 42, 73, .24);
+  backdrop-filter: blur(26px) saturate(165%);
+  -webkit-backdrop-filter: blur(26px) saturate(165%);
+}
+.store-assistant .assistant-panel header {
+  background: rgba(237, 243, 249, .98);
+}
+.store-assistant .assistant-messages {
+  background: rgba(243, 247, 251, .96);
+  max-height: min(340px, 44vh);
+}
+#assistant-form {
+  background: rgba(255, 255, 255, .98);
+}
+[data-theme="dark"] .store-assistant .assistant-panel {
+  background: rgba(21, 27, 48, .97);
+  border-color: rgba(138, 165, 214, .30);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .48);
+}
+[data-theme="dark"] .store-assistant .assistant-panel header,
+[data-theme="dark"] .store-assistant .assistant-messages,
+[data-theme="dark"] #assistant-form {
+  background: rgba(21, 27, 48, .98);
+}
+
+@media (max-width: 900px) {
+  .header,
+  [data-theme="dark"] .header {
+    backdrop-filter: blur(28px) saturate(175%);
+    -webkit-backdrop-filter: blur(28px) saturate(175%);
+  }
 }
 

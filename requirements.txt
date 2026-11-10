@@ -3,3 +3,5 @@ Pillow==12.2.0
 webauthn==2.2.0
 uvicorn==0.38.0
 websockets==15.0.1
+psycopg[binary]>=3.2,<4
+vercel-blob>=0.5.0,<1

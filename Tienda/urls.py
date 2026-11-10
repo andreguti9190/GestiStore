@@ -56,6 +56,7 @@ urlpatterns = [
 
     # Historial de ventas (admin)
     path('ventas/', views.historial_ventas, name='historial_ventas'),
+    path('ventas/revision/', views.dashboard_revision, name='dashboard_revision'),
     path('ventas/exportar/', views.exportar_ventas_csv, name='exportar_ventas_csv'),
     path('ventas/devoluciones/<int:pk>/resolver/', views.resolver_devolucion, name='resolver_devolucion'),
 ]

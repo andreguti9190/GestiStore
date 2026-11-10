@@ -1491,6 +1491,19 @@ class DashboardVendedorTests(TestCase):
 
         self.assertEqual(response.context['page_obj'].paginator.count, 1)
 
+    def test_revision_del_panel_es_privada_y_cambia_al_actualizar(self):
+        first = self.client.get(reverse('dashboard_revision'))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first['Cache-Control'], 'no-store')
+
+        self.venta.estado_envio = 'enviado'
+        self.venta.save(update_fields=['estado_envio'])
+        second = self.client.get(reverse('dashboard_revision'))
+
+        self.assertNotEqual(first.json()['revision'], second.json()['revision'])
+        self.client.force_login(self.cliente)
+        self.assertEqual(self.client.get(reverse('dashboard_revision')).status_code, 403)
+
     @patch('Tienda.views.publish_dashboard_event')
     def test_actualiza_estado_de_pago_y_envio(self, publish):
         with self.captureOnCommitCallbacks(execute=True):
@@ -1628,6 +1641,37 @@ class AsistenteGuiadoTests(TestCase):
         response = self.client.post(reverse('asistente_consulta'), {'intent': 'inventado'})
 
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(OPENAI_API_KEY='test-key', OPENAI_CHAT_MODEL='gpt-6-luna')
+    def test_consulta_libre_usa_responses_api_sin_guardar_respuesta(self):
+        api_result = BytesIO(json.dumps({
+            'output': [{
+                'type': 'message',
+                'content': [{'type': 'output_text', 'text': 'Tenemos mouse con stock.'}],
+            }],
+        }).encode())
+        with patch('Tienda.views.urlopen', return_value=api_result) as mocked_urlopen:
+            response = self.client.post(reverse('asistente_consulta'), {
+                'message': '¿Tienen mouse?',
+                'history': json.dumps([{'role': 'user', 'content': 'Hola'}]),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['answer'], 'Tenemos mouse con stock.')
+        api_request = mocked_urlopen.call_args.args[0]
+        payload = json.loads(api_request.data.decode())
+        self.assertEqual(payload['model'], 'gpt-6-luna')
+        self.assertFalse(payload['store'])
+        self.assertEqual(payload['input'][-1]['content'], '¿Tienen mouse?')
+        self.assertNotIn('Mouse', payload['instructions'])
+
+    @override_settings(OPENAI_API_KEY='')
+    def test_consulta_libre_exige_configuracion_server_side(self):
+        response = self.client.post(reverse('asistente_consulta'), {
+            'message': 'Recomendame un producto',
+        })
+
+        self.assertEqual(response.status_code, 503)
 
 
 class DashboardRealtimeTests(TestCase):

@@ -65,8 +65,9 @@ dashboard_events = DashboardEventBroker()
 def get_dashboard_revision():
     from .models import Venta
 
-    state = Venta.objects.aggregate(total=Count('pk'), latest=Max('pk'))
-    return f"{state['total']}:{state['latest'] or 0}"
+    state = Venta.objects.aggregate(total=Count('pk'), latest=Max('actualizada_en'))
+    latest = state['latest'].isoformat() if state['latest'] else '0'
+    return f"{state['total']}:{latest}"
 
 
 def publish_dashboard_event(event_type, sale_id):

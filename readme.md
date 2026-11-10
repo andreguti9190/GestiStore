@@ -20,7 +20,8 @@ que instalar certificados, descargar una app, estar en el mismo Wi-Fi ni configu
 El enlace funciona mientras la ventana del iniciador permanezca abierta.
 
 Este modo usa un túnel rápido gratuito de Cloudflare. En la primera ejecución, la PC que hospeda
-AmpereStore prepara automáticamente el componente oficial `cloudflared`; las personas que abren el
+AmpereStore prepara automáticamente las dependencias de Python dentro de `.runtime` y el componente
+oficial `cloudflared`; las personas que abren el
 enlace no instalan ni descargan nada. La aplicación queda accesible desde Internet
 para quien tenga el enlace, pero las cuentas continúan protegidas por el inicio de sesión de
 AmpereStore. El dominio temporal puede cambiar al reiniciar. El reconocimiento facial queda ligado
@@ -216,6 +217,81 @@ La cuenta compradora y su código de verificación se consultan en Mercado Pago 
 
 ---
 
+## Despliegue en Vercel
+
+La versión de producción usa **Django ASGI**, **PostgreSQL (Neon)** y un
+**Vercel Blob público** para que cuentas, sesiones, ventas e imágenes persistan
+aunque las Functions se reinicien. SQLite y `media/` siguen disponibles para
+`iniciar_facil.bat`, pero no se usan en Vercel.
+
+### 1. Preparar los servicios
+
+1. Subí el repositorio a GitHub e importalo como proyecto en Vercel.
+2. En **Storage**, conectá una base PostgreSQL de Neon y un Blob Store público.
+   Las integraciones deben exponer `DATABASE_URL` y `BLOB_STORE_ID`.
+3. Configurá estas variables para Production y Preview:
+
+```env
+DJANGO_SECRET_KEY=una-clave-larga-y-aleatoria
+DJANGO_DEBUG=false
+PUBLIC_BASE_URL=https://tu-dominio.vercel.app
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=tu-correo@gmail.com
+EMAIL_HOST_PASSWORD=tu-clave-de-aplicacion
+DEFAULT_FROM_EMAIL=AmpereStore <tu-correo@gmail.com>
+EMAIL_NOTICES_BACKGROUND=false
+OPENAI_API_KEY=una-clave-nueva
+OPENAI_CHAT_MODEL=gpt-6-luna
+MERCADOPAGO_ACCESS_TOKEN=tu-token
+MERCADOPAGO_PUBLIC_KEY=tu-clave-publica
+MERCADOPAGO_WEBHOOK_SECRET=tu-secreto-webhook
+MERCADOPAGO_MODE=production
+WEBAUTHN_RP_ID=tu-dominio.vercel.app
+WEBAUTHN_ORIGIN=https://tu-dominio.vercel.app
+```
+
+Vercel agrega sus propios dominios a los hosts permitidos. Para un dominio
+propio, agregá además `DJANGO_ALLOWED_HOSTS` y
+`DJANGO_CSRF_TRUSTED_ORIGINS=https://tu-dominio`.
+
+> Nunca subas `.env`, `.env.vercel`, el volcado de datos ni claves al repositorio.
+> Si una clave fue compartida por chat o captura, revocala y generá otra antes
+> de cargarla en Vercel.
+
+### 2. Crear el esquema y trasladar los datos actuales
+
+Instalá la CLI (`npm install -g vercel`), iniciá sesión y vinculá el proyecto con
+`vercel link`. Luego, desde PowerShell:
+
+```powershell
+# Exportar la base SQLite local (el archivo queda ignorado por Git)
+& "C:\Users\Gustavo Estevez\AppData\Local\Programs\Python\Python313\python.exe" manage.py dumpdata --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --exclude sessions --exclude admin.logentry --indent 2 --output deployment-data.json
+
+# Descargar las variables del entorno de producción sin reemplazar el .env local
+vercel env pull .env.vercel --environment=production
+$env:GESTISTORE_ENV_FILE = '.env.vercel'
+
+# Crear tablas, importar registros y subir las imágenes locales a Blob
+& "C:\Users\Gustavo Estevez\AppData\Local\Programs\Python\Python313\python.exe" manage.py migrate
+& "C:\Users\Gustavo Estevez\AppData\Local\Programs\Python\Python313\python.exe" manage.py loaddata deployment-data.json
+& "C:\Users\Gustavo Estevez\AppData\Local\Programs\Python\Python313\python.exe" manage.py migrar_imagenes_blob
+
+Remove-Item Env:GESTISTORE_ENV_FILE
+```
+
+Para la carga ejecutada desde la PC, `.env.vercel` debe incluir un
+`BLOB_READ_WRITE_TOKEN`; se genera desde el Blob Store y no se versiona. En las
+Functions desplegadas, el SDK usa automáticamente la identidad OIDC de Vercel
+junto con `BLOB_STORE_ID`.
+
+Después hacé un nuevo deploy. Verificá registro, login y 2FA, recuperación de
+contraseña, creación de producto con imagen, una compra de prueba, el webhook de
+Mercado Pago y el chatbot. El panel vendedor usa WebSocket y además consulta una
+revisión cada 15 segundos, por lo que se actualiza incluso si Vercel atiende cada
+conexión desde una instancia diferente.
+
 ## 🧪 Tests
 
 ```powershell
@@ -242,9 +318,10 @@ python manage.py test Tienda
 
 ## 📌 Nota
 
-El proyecto es una **demo**, por lo que `DEBUG` está en `True`. Para producción habría que configurar
-variables de entorno, un servidor SMTP propio, almacenamiento cifrado adecuado para la plantilla
-biométrica, controles de prueba de vida y una base de datos más robusta.
+El modo local conserva `DEBUG=True`. El despliegue documentado usa `DEBUG=False`,
+PostgreSQL y almacenamiento persistente. El reconocimiento facial sigue siendo
+una función demostrativa: antes de un uso comercial corresponde sumar controles
+de prueba de vida, una revisión legal y protección específica para datos biométricos.
 
 Los navegadores solamente permiten abrir la cámara desde **HTTPS confiable** o `localhost`.
 `iniciar_facil.bat` crea el enlace HTTPS temporal que debe compartirse con los demás dispositivos;
