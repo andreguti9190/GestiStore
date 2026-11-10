@@ -52,6 +52,8 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+CENTAVO = Decimal('0.01')
+
 from .models import (
     CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
     Perfil, Producto, SolicitudDevolucion, Venta,
@@ -1200,9 +1202,9 @@ def ver_carrito(request):
         return redirect('historial_ventas')
     carrito = request.session.get('carrito', {})
     items = []
-    total = 0
+    total = Decimal('0.00')
     for key, item in carrito.items():
-        subtotal = item['producto_precio'] * item['cantidad']
+        subtotal = (Decimal(str(item['producto_precio'])) * item['cantidad']).quantize(CENTAVO)
         total += subtotal
         items.append({**item, 'subtotal': subtotal, 'key': key})
     return render(request, 'tienda/carrito.html', {'items': items, 'total': total})
@@ -1231,9 +1233,9 @@ def confirmar_compra(request):
     request.session.pop('purchase_face_auth', None)
 
     items = []
-    total = 0
+    total = Decimal('0.00')
     for key, item in carrito.items():
-        subtotal = item['producto_precio'] * item['cantidad']
+        subtotal = (Decimal(str(item['producto_precio'])) * item['cantidad']).quantize(CENTAVO)
         total += subtotal
         items.append({**item, 'subtotal': subtotal, 'key': key})
 
@@ -1782,7 +1784,7 @@ def procesar_pago(request):
     # La venta y el descuento de stock se confirman como una sola operación.
     with transaction.atomic():
         productos = {}
-        total = 0
+        total = Decimal('0.00')
         for item in carrito.values():
             producto = get_object_or_404(
                 Producto.objects.select_for_update(),
@@ -1792,7 +1794,7 @@ def procesar_pago(request):
                 messages.error(request, f'No hay stock suficiente de "{producto.nombre}".')
                 return redirect('ver_carrito')
             productos[producto.pk] = producto
-            total += producto.precio * item['cantidad']
+            total += (producto.precio * item['cantidad']).quantize(CENTAVO)
 
         venta = Venta.objects.create(
             usuario=request.user,
