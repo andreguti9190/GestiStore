@@ -16,17 +16,17 @@
   <link rel="icon" type="image/png" href="{% static 'tienda/images/ampere-isotipo-azul.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-1">
-  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261110-3">
+  <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-3">
+  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261110-5">
 </head>
 <body data-websocket-url="/ws/ventas/" data-live-revision="{{ dashboard_revision }}">
 <header class="header">
   <div class="header-inner">
     <a href="{% url 'inicio' %}" class="header-brand">
       <span class="brand-logo" aria-hidden="true"><img src="{% static 'tienda/images/ampere-isotipo-blanco.png' %}" alt="" width="148" height="177"></span>
-      <span class="brand-text"><span class="brand-title">AmpereStore</span><span class="brand-sub">Tecnología y componentes</span></span>
+      <div class="brand-text"><div class="brand-title">AmpereStore</div><div class="brand-sub">Tecnología y componentes</div></div>
     </a>
     <nav class="nav-links" aria-label="Navegación principal">
       <a href="{% url 'inicio' %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Inicio</a>
@@ -54,17 +54,17 @@
       <button class="sidebar-close icon-button" type="button" id="sidebar-close" aria-label="Cerrar menú">×</button>
     </div>
     <nav class="seller-nav" aria-label="Navegación del panel">
-      <span class="nav-caption">GESTIÓN</span>
-      <a href="#resumen" class="active" data-section="resumen"><span class="nav-icon">⌂</span>Inicio</a>
-      <a href="#ventas" data-section="ventas"><span class="nav-icon">↗</span>Ventas</a>
-      <a href="#pedidos" data-section="pedidos"><span class="nav-icon">▣</span>Pedidos <span class="nav-badge">{{ page_obj.paginator.count }}</span></a>
-      <a href="#envios" data-section="envios"><span class="nav-icon">⌖</span>Envíos</a>
-      <a href="#devoluciones" data-section="devoluciones"><span class="nav-icon">↩</span>Devoluciones{% if pending_returns %} <span class="nav-badge">{{ pending_returns|length }}</span>{% endif %}</a>
-      <a href="#clientes" data-section="clientes"><span class="nav-icon">♙</span>Clientes</a>
-      <span class="nav-caption">CRECIMIENTO</span>
-      <a href="#analiticas" data-section="analiticas"><span class="nav-icon">⌁</span>Analíticas</a>
-      <a href="#" data-coming-soon="Promociones"><span class="nav-icon">%</span>Promociones</a>
-      <a href="#finanzas" data-section="finanzas"><span class="nav-icon">$</span>Finanzas</a>
+      <span class="nav-caption">Gestión</span>
+      <a href="#resumen" class="active" data-section="resumen">Inicio</a>
+      <a href="#ventas" data-section="ventas">Ventas</a>
+      <a href="#pedidos" data-section="pedidos">Pedidos <span class="nav-badge">{{ page_obj.paginator.count }}</span></a>
+      <a href="#envios" data-section="envios">Envíos</a>
+      <a href="#devoluciones" data-section="devoluciones">Devoluciones{% if pending_returns %} <span class="nav-badge">{{ pending_returns|length }}</span>{% endif %}</a>
+      <a href="#clientes" data-section="clientes">Clientes</a>
+      <span class="nav-caption">Crecimiento</span>
+      <a href="#analiticas" data-section="analiticas">Analíticas</a>
+      <a href="#" data-coming-soon="Promociones">Promociones</a>
+      <a href="#finanzas" data-section="finanzas">Finanzas</a>
     </nav>
     <div class="sidebar-bottom">
       <div class="store-health"><span class="health-dot"></span><div><strong>Tienda operativa</strong><small>Datos sincronizados</small></div></div>
@@ -82,7 +82,7 @@
       {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}"><span>{{ message }}</span><button type="button" aria-label="Cerrar">×</button></div>{% endfor %}</div>{% endif %}
 
       <section class="welcome-row" id="resumen">
-        <div><span class="eyebrow">RESUMEN DEL NEGOCIO</span><h1>¡Buen día, {{ user.first_name|default:user.username }}!</h1><p>Este es el resumen de tu tienda. Los datos se actualizan con cada venta.</p></div>
+        <div><span class="eyebrow">Resumen del negocio</span><h1>Resumen de la tienda</h1><p>Este es el resumen de tu tienda. Los datos se actualizan con cada venta.</p></div>
         <div class="header-controls">
           <div class="store-selector"><span class="store-avatar">A</span><div><small>Tienda activa</small><strong>AmpereStore</strong></div><span>⌄</span></div>
           <form method="get" class="period-control" id="period-form">
@@ -92,7 +92,7 @@
             </select>
             <div class="custom-dates"{% if period != 'personalizado' %} hidden{% endif %}><input type="date" name="desde" value="{{ start_date|date:'Y-m-d' }}" aria-label="Desde"><input type="date" name="hasta" value="{{ end_date|date:'Y-m-d' }}" aria-label="Hasta"><button type="submit">Aplicar</button></div>
           </form>
-          <a href="{% url 'crear_producto' %}" class="primary-button"><span>＋</span> Agregar producto</a>
+          <a href="{% url 'crear_producto' %}" class="primary-button">Agregar producto</a>
         </div>
       </section>
 
@@ -100,34 +100,32 @@
 
       <section class="metrics-grid" aria-label="Métricas principales">
         {% for metric in metric_cards %}<article class="metric-card metric-{{ metric.key }}">
-          <div class="metric-head"><span class="metric-icon">{% if metric.key == 'sales' %}$↗{% elif metric.key == 'profit' %}◎{% elif metric.key == 'orders' %}▣{% else %}◇{% endif %}</span><span class="metric-menu">•••</span></div>
           <span class="metric-label">{{ metric.label }}</span><div class="metric-value">{% if metric.money %}<small>$</small>{% endif %}{{ metric.value|floatformat:0 }}</div>
-          <div class="metric-foot"><span class="variation {% if metric.variation >= 0 %}positive{% else %}negative{% endif %}">{% if metric.variation >= 0 %}↗{% else %}↘{% endif %} {{ metric.variation }}%</span><span>vs. período anterior</span></div>
-          <svg class="sparkline" viewBox="0 0 120 35" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area" d="M0 31 C18 27,21 19,37 23 S57 30,70 16 S92 12,120 3 L120 35 L0 35Z"/><path class="spark-line" d="M0 31 C18 27,21 19,37 23 S57 30,70 16 S92 12,120 3"/></svg>
+          <div class="metric-foot"><span class="variation {% if metric.variation >= 0 %}positive{% else %}negative{% endif %}">{% if metric.variation >= 0 %}+{% else %}−{% endif %}{{ metric.variation }}%</span><span>vs. período anterior</span></div>
         </article>{% endfor %}
       </section>
 
       <section class="analytics-grid" id="analiticas">
-        <article class="panel sales-chart-panel" id="ventas"><div class="panel-heading"><div><span class="panel-kicker">INGRESOS</span><h2>Evolución de ventas</h2><p>Facturación de pedidos pagados</p></div><div class="chart-total"><small>Total del período</small><strong>${{ metric_cards.0.value|floatformat:0 }}</strong></div></div><div class="chart-wrap"><canvas id="sales-chart" aria-label="Gráfico de evolución de ventas"></canvas><div class="chart-empty" hidden>No hay ventas en este período.</div></div></article>
-        <article class="panel order-status-panel"><div class="panel-heading"><div><span class="panel-kicker">OPERACIONES</span><h2>Estado de pedidos</h2><p>{{ metric_cards.2.value }} pedidos en el período</p></div></div><div class="donut-layout"><div class="donut-wrap"><canvas id="orders-chart" aria-label="Gráfico de estado de pedidos"></canvas><div class="donut-center"><strong>{{ metric_cards.2.value }}</strong><span>Total</span></div></div><div class="chart-legend" id="orders-legend"></div></div></article>
+        <article class="panel sales-chart-panel" id="ventas"><div class="panel-heading"><div><span class="panel-kicker">Ingresos</span><h2>Evolución de ventas</h2><p>Facturación de pedidos pagados</p></div><div class="chart-total"><small>Total del período</small><strong>${{ metric_cards.0.value|floatformat:0 }}</strong></div></div><div class="chart-wrap"><canvas id="sales-chart" aria-label="Gráfico de evolución de ventas"></canvas><div class="chart-empty" hidden>No hay ventas en este período.</div></div></article>
+        <article class="panel order-status-panel"><div class="panel-heading"><div><span class="panel-kicker">Operaciones</span><h2>Estado de pedidos</h2><p>{{ metric_cards.2.value }} pedidos en el período</p></div></div><div class="donut-layout"><div class="donut-wrap"><canvas id="orders-chart" aria-label="Gráfico de estado de pedidos"></canvas><div class="donut-center"><strong>{{ metric_cards.2.value }}</strong><span>Total</span></div></div><div class="chart-legend" id="orders-legend"></div></div></article>
       </section>
 
       <section class="insights-grid">
-        <article class="panel products-panel"><div class="panel-heading"><div><span class="panel-kicker">CATÁLOGO</span><h2>Productos más vendidos</h2><p>Ordenados por ingresos generados</p></div><a href="{% url 'lista_productos' %}">Ver catálogo →</a></div><div class="product-ranking">
-          {% for item in top_products %}<div class="rank-row"><span class="rank-number">{{ forloop.counter|stringformat:'02d' }}</span><div class="rank-image">{% if item.producto.imagen %}<img src="{{ item.producto.imagen.url }}" alt="">{% else %}<span>◇</span>{% endif %}</div><div class="rank-name"><strong>{{ item.producto.nombre }}</strong><small>{{ item.producto.get_categoria_display }}</small></div><div class="rank-units"><strong>{{ item.units }}</strong><small>unidades</small></div><div class="rank-revenue"><strong>${{ item.revenue|floatformat:0 }}</strong><small>ingresos</small></div></div>{% empty %}<div class="empty-state compact"><span>◇</span><strong>Sin ventas todavía</strong><p>El ranking aparecerá cuando entren pedidos.</p></div>{% endfor %}
+        <article class="panel products-panel"><div class="panel-heading"><div><span class="panel-kicker">Catálogo</span><h2>Productos más vendidos</h2><p>Ordenados por ingresos generados</p></div><a href="{% url 'lista_productos' %}">Ver catálogo →</a></div><div class="product-ranking">
+          {% for item in top_products %}<div class="rank-row"><span class="rank-number">{{ forloop.counter|stringformat:'02d' }}</span><div class="rank-image">{% if item.producto.imagen %}<img src="{{ item.producto.imagen.url }}" alt="">{% endif %}</div><div class="rank-name"><strong>{{ item.producto.nombre }}</strong><small>{{ item.producto.get_categoria_display }}</small></div><div class="rank-units"><strong>{{ item.units }}</strong><small>unidades</small></div><div class="rank-revenue"><strong>${{ item.revenue|floatformat:0 }}</strong><small>ingresos</small></div></div>{% empty %}<div class="empty-state compact"><strong>Sin ventas todavía</strong><p>El ranking aparecerá cuando entren pedidos.</p></div>{% endfor %}
         </div></article>
-        <article class="panel inventory-panel"><div class="panel-heading"><div><span class="panel-kicker warning">INVENTARIO</span><h2>Alertas de stock</h2><p>Productos que necesitan atención</p></div><a href="{% url 'lista_productos' %}">Gestionar →</a></div><div class="inventory-summary"><div><strong>{{ total_products }}</strong><span>Productos activos</span></div><div><strong>{{ inventory_alerts|length }}</strong><span>Stock bajo</span></div><div class="danger"><strong>{{ out_of_stock }}</strong><span>Agotados</span></div></div><div class="inventory-list">
-          {% for product in inventory_alerts %}<a href="{% url 'editar_producto' product.pk %}" class="inventory-row"><span class="stock-indicator {% if product.stock == 0 %}out{% endif %}"></span><div><strong>{{ product.nombre }}</strong><small>{{ product.sku|default:'Sin SKU' }}</small></div><span class="stock-count {% if product.stock == 0 %}out{% endif %}">{% if product.stock == 0 %}Agotado{% else %}{{ product.stock }} unid.{% endif %}</span></a>{% empty %}<div class="empty-mini success">✓ El inventario está saludable.</div>{% endfor %}
+        <article class="panel inventory-panel"><div class="panel-heading"><div><span class="panel-kicker warning">Inventario</span><h2>Alertas de stock</h2><p>Productos que necesitan atención</p></div><a href="{% url 'lista_productos' %}">Gestionar →</a></div><div class="inventory-summary"><div><strong>{{ total_products }}</strong><span>Productos activos</span></div><div><strong>{{ inventory_alerts|length }}</strong><span>Stock bajo</span></div><div class="danger"><strong>{{ out_of_stock }}</strong><span>Agotados</span></div></div><div class="inventory-list">
+          {% for product in inventory_alerts %}<a href="{% url 'editar_producto' product.pk %}" class="inventory-row"><span class="stock-indicator {% if product.stock == 0 %}out{% endif %}"></span><div><strong>{{ product.nombre }}</strong><small>{{ product.sku|default:'Sin SKU' }}</small></div><span class="stock-count {% if product.stock == 0 %}out{% endif %}">{% if product.stock == 0 %}Agotado{% else %}{{ product.stock }} unid.{% endif %}</span></a>{% empty %}<div class="empty-mini success">El inventario está saludable.</div>{% endfor %}
         </div></article>
       </section>
 
       <section class="analytics-grid secondary-charts" id="finanzas">
-        <article class="panel category-panel"><div class="panel-heading"><div><span class="panel-kicker">RENDIMIENTO</span><h2>Ventas por categoría</h2><p>Comparación de ingresos por rubro</p></div></div><div class="bar-chart" id="category-chart"></div></article>
-        <article class="panel quick-actions-panel"><div class="panel-heading"><div><span class="panel-kicker">ATAJOS</span><h2>Acciones rápidas</h2><p>Las tareas más frecuentes</p></div></div><div class="quick-actions"><a href="{% url 'crear_producto' %}"><span>＋</span><div><strong>Crear producto</strong><small>Sumá un artículo al catálogo</small></div></a><a href="#pedidos"><span>▣</span><div><strong>Gestionar pedidos</strong><small>Actualizá pagos y envíos</small></div></a><a href="{% url 'exportar_ventas_excel' %}"><span>⇩</span><div><strong>Exportar reporte</strong><small>Descargá todas las ventas en Excel (.xlsx)</small></div></a></div></article>
+        <article class="panel category-panel"><div class="panel-heading"><div><span class="panel-kicker">Rendimiento</span><h2>Ventas por categoría</h2><p>Comparación de ingresos por rubro</p></div></div><div class="bar-chart" id="category-chart"></div></article>
+        <article class="panel quick-actions-panel"><div class="panel-heading"><div><span class="panel-kicker">Atajos</span><h2>Acciones rápidas</h2><p>Las tareas más frecuentes</p></div></div><div class="quick-actions"><a href="{% url 'crear_producto' %}"><div><strong>Crear producto</strong><small>Sumá un artículo al catálogo</small></div></a><a href="#pedidos"><div><strong>Gestionar pedidos</strong><small>Actualizá pagos y envíos</small></div></a><a href="{% url 'exportar_ventas_excel' %}"><div><strong>Exportar reporte</strong><small>Descargá todas las ventas en Excel (.xlsx)</small></div></a></div></article>
       </section>
 
       <section class="panel orders-panel" id="pedidos">
-        <div class="panel-heading orders-heading"><div><span class="panel-kicker">TRANSACCIONES</span><h2>Pedidos recientes</h2><p>Buscá, filtrá y actualizá tus operaciones</p></div><a class="outline-button" href="{% url 'exportar_ventas_excel' %}">⇩ Descargar Excel</a></div>
+        <div class="panel-heading orders-heading"><div><span class="panel-kicker">Transacciones</span><h2>Pedidos recientes</h2><p>Buscá, filtrá y actualizá tus operaciones</p></div><a class="outline-button" href="{% url 'exportar_ventas_excel' %}">Descargar Excel</a></div>
         <form method="get" class="table-filters"><input type="hidden" name="periodo" value="{{ period }}"><label class="filter-search"><span>⌕</span><input name="q" value="{{ request.GET.q }}" placeholder="Pedido, cliente o producto"></label><select name="envio" aria-label="Filtrar estado de envío"><option value="">Todos los envíos</option>{% for value,label in shipping_choices %}<option value="{{ value }}"{% if request.GET.envio == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><select name="pago" aria-label="Filtrar estado de pago"><option value="">Todos los pagos</option>{% for value,label in payment_choices %}<option value="{{ value }}"{% if request.GET.pago == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><select name="orden" aria-label="Ordenar pedidos"><option value="-fecha">Más recientes</option><option value="fecha"{% if request.GET.orden == 'fecha' %} selected{% endif %}>Más antiguos</option><option value="-total"{% if request.GET.orden == '-total' %} selected{% endif %}>Mayor importe</option><option value="total"{% if request.GET.orden == 'total' %} selected{% endif %}>Menor importe</option><option value="cliente"{% if request.GET.orden == 'cliente' %} selected{% endif %}>Cliente A–Z</option></select><button type="submit">Filtrar</button>{% if request.GET.q or request.GET.envio or request.GET.pago %}<a href="?periodo={{ period }}" class="clear-filter">Limpiar</a>{% endif %}</form>
         <div class="table-scroll"><table class="orders-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Productos</th><th>Total</th><th>Pago</th><th>Envío</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody>
           {% for sale in page_obj %}<tr data-order="{{ sale.pk }}" tabindex="0"><td><button type="button" class="order-code open-order" data-order="{{ sale.pk }}">{{ sale.codigo }}</button></td><td><div class="customer-cell"><span>{{ sale.usuario.username|slice:':1'|upper }}</span><div><strong>{{ sale.usuario.get_full_name|default:sale.usuario.username }}</strong><small>{{ sale.usuario.email|default:'Sin email' }}</small></div></div></td><td><strong>{{ sale.fecha_venta|date:'d M Y' }}</strong><small>{{ sale.fecha_venta|date:'H:i' }} hs</small></td><td><strong>{{ sale.detalles.all|length }} producto{{ sale.detalles.all|length|pluralize:'s' }}</strong><small>{% for detail in sale.detalles.all|slice:':2' %}{{ detail.producto.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}</small></td><td class="money-cell">${{ sale.total|floatformat:0 }}</td><td><span class="status-badge payment-{{ sale.estado_pago }}">{{ sale.get_estado_pago_display }}</span></td><td><span class="status-badge shipping-{{ sale.estado_envio }}">{{ sale.get_estado_envio_display }}</span></td><td><button type="button" class="row-action open-order" data-order="{{ sale.pk }}" aria-label="Ver pedido">•••</button></td></tr>{% empty %}<tr><td colspan="8"><div class="empty-state"><span>⌕</span><strong>No encontramos pedidos</strong><p>Probá con otros filtros o un período diferente.</p></div></td></tr>{% endfor %}
@@ -136,7 +134,7 @@
       </section>
 
       <section class="shipping-section" id="envios">
-        <div class="section-title-row"><div><span class="panel-kicker">LOGÍSTICA</span><h2>Mapa de envíos</h2><p>Ubicación aproximada y estado operativo de cada entrega.</p></div><span class="live-badge"><i></i>Sincronizado</span></div>
+        <div class="section-title-row"><div><span class="panel-kicker">Logística</span><h2>Mapa de envíos</h2><p>Ubicación aproximada y estado operativo de cada entrega.</p></div><span class="live-badge"><i></i>Sincronizado</span></div>
         <div class="shipping-layout panel">
           <div id="seller-shipping-map" aria-label="Mapa de envíos activos"></div>
           <div class="shipping-overview">
@@ -147,13 +145,13 @@
       </section>
 
       <section class="returns-section panel" id="devoluciones">
-        <div class="panel-heading"><div><span class="panel-kicker">POSTVENTA</span><h2>Solicitudes de devolución</h2><p>Revisá, aprobá o rechazá solicitudes de clientes.</p></div><span class="return-count">{{ pending_returns|length }} pendientes</span></div>
+        <div class="panel-heading"><div><span class="panel-kicker">Postventa</span><h2>Solicitudes de devolución</h2><p>Revisá, aprobá o rechazá solicitudes de clientes.</p></div><span class="return-count">{{ pending_returns|length }} pendientes</span></div>
         <div class="return-list">
           {% for return in pending_returns %}<article class="return-row"><div><strong>{{ return.venta.codigo }} · {{ return.venta.usuario.get_full_name|default:return.venta.usuario.username }}</strong><span>{{ return.get_motivo_display }} · {{ return.creada_en|date:'d/m/Y H:i' }}</span>{% if return.detalle %}<p>{{ return.detalle }}</p>{% endif %}</div><form method="post" action="{% url 'resolver_devolucion' return.pk %}">{% csrf_token %}<input name="respuesta" maxlength="300" placeholder="Respuesta para el cliente (opcional)"><button name="decision" value="rechazada" class="return-reject">Rechazar</button><button name="decision" value="aprobada" class="return-approve">Aprobar y reembolsar</button></form></article>{% empty %}<div class="empty-mini success">No hay devoluciones pendientes.</div>{% endfor %}
         </div>
       </section>
 
-      <section class="bottom-grid" id="clientes"><article class="panel activity-panel"><div class="panel-heading"><div><span class="panel-kicker">EN VIVO</span><h2>Actividad reciente</h2><p>Últimos movimientos de la tienda</p></div><div class="activity-actions"><button class="icon-button notification-button" id="notification-button" type="button" aria-label="Notificaciones" aria-expanded="false">♢<span class="notification-dot"></span></button><span class="live-badge"><i></i>En vivo</span></div></div><div class="notification-panel" id="notification-panel" hidden><div class="panel-heading"><div><strong>Notificaciones</strong><small id="notification-count">3 sin leer</small></div><button id="mark-read" type="button">Marcar leídas</button></div>{% for activity in recent_activity|slice:':3' %}<div class="notification-item unread"><span class="activity-symbol {{ activity.kind }}">{% if activity.kind == 'stock' %}!{% else %}✓{% endif %}</span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p><time>{{ activity.date|timesince }} atrás</time></div></div>{% empty %}<div class="empty-mini">No hay notificaciones nuevas.</div>{% endfor %}</div><div class="activity-list">{% for activity in recent_activity|slice:':6' %}<div class="activity-row"><span class="activity-symbol {{ activity.kind }}">{% if activity.kind == 'stock' %}!{% else %}✓{% endif %}</span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p></div><time>{{ activity.date|timesince }} atrás</time></div>{% empty %}<div class="empty-mini">La actividad aparecerá acá.</div>{% endfor %}</div></article><article class="panel customers-card"><span class="panel-kicker">CLIENTES</span><strong class="large-number">{{ active_customers }}</strong><h2>Compradores activos</h2><p>Clientes únicos que realizaron pedidos dentro del período seleccionado.</p><a href="#pedidos">Ver pedidos de clientes →</a></article></section>
+      <section class="bottom-grid" id="clientes"><article class="panel activity-panel"><div class="panel-heading"><div><span class="panel-kicker">En vivo</span><h2>Actividad reciente</h2><p>Últimos movimientos de la tienda</p></div><div class="activity-actions"><button class="icon-button notification-button" id="notification-button" type="button" aria-label="Notificaciones" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="notification-dot"></span></button><span class="live-badge"><i></i>En vivo</span></div></div><div class="notification-panel" id="notification-panel" hidden><div class="panel-heading"><div><strong>Notificaciones</strong><small id="notification-count">3 sin leer</small></div><button id="mark-read" type="button">Marcar leídas</button></div>{% for activity in recent_activity|slice:':3' %}<div class="notification-item unread"><span class="activity-symbol {{ activity.kind }}" aria-hidden="true"></span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p><time>{{ activity.date|timesince }} atrás</time></div></div>{% empty %}<div class="empty-mini">No hay notificaciones nuevas.</div>{% endfor %}</div><div class="activity-list">{% for activity in recent_activity|slice:':6' %}<div class="activity-row"><span class="activity-symbol {{ activity.kind }}" aria-hidden="true"></span><div><strong>{{ activity.title }}</strong><p>{{ activity.text }}</p></div><time>{{ activity.date|timesince }} atrás</time></div>{% empty %}<div class="empty-mini">La actividad aparecerá acá.</div>{% endfor %}</div></article><article class="panel customers-card"><span class="panel-kicker">Clientes</span><strong class="large-number">{{ active_customers }}</strong><h2>Compradores activos</h2><p>Clientes únicos que realizaron pedidos dentro del período seleccionado.</p><a href="#pedidos">Ver pedidos de clientes →</a></article></section>
     </div>
   </main>
 </div>
@@ -171,6 +169,6 @@
 {{ shipping_map|json_script:'shipping-map-data' }}
 {{ category_chart|json_script:'category-data' }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{% static 'tienda/js/dashboard.js' %}?v=20261110-2"></script>
+<script src="{% static 'tienda/js/dashboard.js' %}?v=20261110-3"></script>
 </body>
 </html>

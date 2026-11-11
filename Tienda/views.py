@@ -218,12 +218,12 @@ def csrf_failure(request, reason=''):
 @login_required
 def inicio(request):
     productos = Producto.objects.filter(activo=True).order_by('-fecha_creacion')
-    destacados = productos[:8]
-    total_productos = Producto.objects.filter(activo=True).count()
+    destacado = productos.first()
+    destacados = productos[1:9] if destacado else productos.none()
     categorias = Producto.CATEGORIA_CHOICES
     return render(request, 'tienda/inicio.html', {
+        'destacado': destacado,
         'destacados': destacados,
-        'total_productos': total_productos,
         'categorias': categorias,
     })
 

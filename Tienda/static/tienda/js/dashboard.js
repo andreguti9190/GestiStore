@@ -14,8 +14,15 @@
       muted: styles.getPropertyValue('--muted').trim(),
       line: styles.getPropertyValue('--line').trim(),
       purple: styles.getPropertyValue('--purple').trim(),
-      surface: styles.getPropertyValue('--surface').trim()
+      surface: styles.getPropertyValue('--surface').trim(),
+      area: styles.getPropertyValue('--chart-area').trim()
     };
+  }
+
+  function themeStatusColors() {
+    var styles = getComputedStyle(root);
+    return ['--chart-pending', '--chart-preparing', '--chart-sent', '--chart-delivered', '--chart-cancelled']
+      .map(function (name) { return styles.getPropertyValue(name).trim(); });
   }
 
   var themeToggle = document.getElementById('theme-toggle');
@@ -30,6 +37,7 @@
     root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
     localStorage.setItem(themeStorageKey, root.dataset.theme);
     updateThemeIcon();
+    chartColors = themeStatusColors();
     drawAllCharts();
   });
 
@@ -176,7 +184,7 @@
   var shippingData = jsonData('shipping-data');
   var shippingMapData = jsonData('shipping-map-data');
   var categoryData = jsonData('category-data');
-  var chartColors = ['#6d5ce7', '#ed8a34', '#3b82f6', '#18a875', '#dc5570'];
+  var chartColors = themeStatusColors();
 
   function initShippingMap() {
     var container = document.getElementById('seller-shipping-map');
@@ -240,7 +248,7 @@
     var values = salesData.map(function (item) { return Number(item.value) || 0; });
     var max = Math.max.apply(null, values.concat([1]));
     ctx.clearRect(0, 0, width, height);
-    ctx.font = '9px Inter';
+    ctx.font = '11px Inter';
     ctx.textBaseline = 'middle';
     for (var tick = 0; tick <= 4; tick += 1) {
       var y = pad.top + (height - pad.top - pad.bottom) * tick / 4;
@@ -262,9 +270,7 @@
     var points = salesData.map(function (item, index) {
       return { x: pad.left + (salesData.length === 1 ? innerWidth / 2 : innerWidth * index / (salesData.length - 1)), y: pad.top + innerHeight * (1 - (Number(item.value) || 0) / max) };
     });
-    var gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-    gradient.addColorStop(0, 'rgba(109,92,231,.28)'); gradient.addColorStop(1, 'rgba(109,92,231,0)');
-    ctx.beginPath(); ctx.moveTo(points[0].x, height - pad.bottom); points.forEach(function (point) { ctx.lineTo(point.x, point.y); }); ctx.lineTo(points[points.length - 1].x, height - pad.bottom); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(points[0].x, height - pad.bottom); points.forEach(function (point) { ctx.lineTo(point.x, point.y); }); ctx.lineTo(points[points.length - 1].x, height - pad.bottom); ctx.closePath(); ctx.fillStyle = colors.area; ctx.fill();
     ctx.beginPath(); points.forEach(function (point, index) { if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); }); ctx.strokeStyle = colors.purple; ctx.lineWidth = 2.3; ctx.lineJoin = 'round'; ctx.stroke();
     points.forEach(function (point) { ctx.beginPath(); ctx.arc(point.x, point.y, 3, 0, Math.PI * 2); ctx.fillStyle = colors.surface; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = colors.purple; ctx.stroke(); });
     ctx.fillStyle = colors.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
