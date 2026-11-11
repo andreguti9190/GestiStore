@@ -15,7 +15,6 @@
   --orange-soft: #f7f1e7;
   --red: #a63a3a;
   --red-soft: #f8eeee;
-  --sidebar: #20272d;
   --chart-area: rgba(49, 95, 138, .10);
   --chart-pending: #a77b32;
   --chart-preparing: #738391;
@@ -61,34 +60,9 @@ a { color: inherit; text-decoration: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 .dashboard-shell { min-height: 100vh; }
 
-.seller-sidebar { position: fixed; inset: var(--amp-header-height) auto 0 0; z-index: 40; display: flex; flex-direction: column; width: 246px; color: #cdd3e3; background: var(--sidebar); box-shadow: 10px 0 35px rgba(12, 15, 27, .08); }
-.sidebar-brand { display: flex; align-items: center; gap: 12px; min-height: 78px; padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
-.sidebar-logo { display: grid; place-items: center; width: 39px; height: 39px; border-radius: 12px; background: linear-gradient(145deg, #7565f2, #4e43c8); box-shadow: 0 8px 20px rgba(109,92,231,.28); }
-.sidebar-logo img { width: 25px; height: 30px; object-fit: contain; }
-.sidebar-brand > span:nth-child(2) { display: flex; flex-direction: column; min-width: 0; }
-.sidebar-brand strong { color: #fff; font: 600 17px Poppins, sans-serif; }
-.sidebar-brand small { color: #858ea8; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
-.sidebar-close { display: none; margin-left: auto; color: #fff !important; }
-.seller-nav { flex: 1; overflow-y: auto; padding: 18px 12px; }
-.nav-caption { display: block; margin: 17px 12px 8px; color: #667088; font-size: 9px; font-weight: 700; letter-spacing: .14em; }
-.seller-nav a { display: flex; align-items: center; gap: 12px; min-height: 43px; margin: 3px 0; padding: 0 12px; border-radius: 9px; color: #9ba4bb; font-size: 13px; font-weight: 500; transition: .18s ease; }
-.seller-nav a:hover { color: #fff; background: rgba(255,255,255,.055); transform: translateX(2px); }
-.seller-nav a.active { color: #fff; background: linear-gradient(90deg, rgba(109,92,231,.3), rgba(109,92,231,.12)); box-shadow: inset 3px 0 #8475ff; }
-.nav-icon { display: grid; place-items: center; width: 19px; color: #9099b4; font-size: 17px; }
-.active .nav-icon { color: #a99fff; }
-.nav-badge { margin-left: auto; padding: 2px 7px; border-radius: 99px; color: #c7c0ff; background: rgba(124,105,244,.2); font-size: 10px; }
-.sidebar-bottom { padding: 13px; border-top: 1px solid rgba(255,255,255,.07); }
-.store-health { display: flex; align-items: center; gap: 9px; margin: 0 4px 13px; padding: 10px 12px; border-radius: 9px; background: rgba(255,255,255,.04); }
-.store-health div, .seller-profile .profile-copy { display: flex; flex-direction: column; min-width: 0; }
-.store-health strong, .seller-profile strong { overflow: hidden; color: #e3e7f2; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.store-health small, .seller-profile small { margin-top: 2px; color: #7d869f; font-size: 9px; }
-.health-dot { width: 8px; height: 8px; border-radius: 50%; background: #35d39a; box-shadow: 0 0 0 4px rgba(53,211,154,.12); }
-.seller-profile { display: flex; align-items: center; gap: 9px; padding: 8px 4px; }
-.profile-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #fff; background: linear-gradient(145deg, #8d80fb, #5c4bd1); font-weight: 700; }
-.profile-copy { flex: 1; }
-.seller-profile button { border: 0; color: #7d869f; background: none; cursor: pointer; }
-
-.seller-main { min-height: 100vh; margin-left: 246px; padding-top: var(--amp-header-height); }
+.seller-main { min-height: 100vh; margin-left: 0; padding-top: var(--amp-header-height); }
+/* Hide the removed sidebar if a browser or template cache serves older markup. */
+.seller-sidebar, .sidebar-scrim, #sidebar-open, #sidebar-close { display: none !important; }
 .dashboard-topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; height: 68px; padding: 0 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); }
 .global-search { position: relative; display: flex; align-items: center; width: min(430px, 45vw); }
 .global-search > span { position: absolute; left: 13px; color: var(--muted); font-size: 19px; }
@@ -372,8 +346,6 @@ html[data-theme="dark"] .shipping-enviado { background: #1d3558; }
 .status-form select { height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--surface-2); }
 .status-form button { width: 100%; margin-top: 12px; }
 body.modal-open { overflow: hidden; }
-.sidebar-scrim { display: none; }
-
 @media (max-width: 1180px) {
   .metrics-grid { grid-template-columns: repeat(2, 1fr); }
   .insights-grid { grid-template-columns: 1fr; }
@@ -382,11 +354,6 @@ body.modal-open { overflow: hidden; }
 }
 
 @media (max-width: 900px) {
-  .seller-sidebar { transform: translateX(-100%); transition: transform .22s ease; }
-  .seller-sidebar.open { transform: translateX(0); }
-  .sidebar-close { display: grid; border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.05); }
-  .sidebar-scrim.open { position: fixed; inset: var(--amp-header-height) 0 0; z-index: 35; display: block; background: rgba(8,12,22,.48); }
-  .seller-main { margin-left: 0; }
   .mobile-menu-button { display: grid; }
   .global-search { width: auto; flex: 1; }
   .dashboard-content { padding: 20px 15px; }
@@ -437,25 +404,6 @@ body.modal-open { overflow: hidden; }
 
 /* Seller workspace visual system */
 body { font-family: 'Inter', system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
-.seller-sidebar { background: #20272d; box-shadow: none; }
-.sidebar-brand { min-height: 72px; padding: 16px 20px; }
-.sidebar-logo { border-radius: 8px; background: #315f8a; box-shadow: none; }
-.sidebar-brand strong { font: 600 16px/1.1 Inter, sans-serif; }
-.sidebar-brand small { margin-top: 4px; color: #c2cbd2; font-size: 11px; letter-spacing: 0; text-transform: none; }
-.seller-nav { padding: 20px 12px; }
-.nav-caption { margin: 16px 12px 8px; color: #aeb8c0; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
-.seller-nav a { min-height: 36px; gap: 8px; margin: 2px 0; border-radius: 7px; color: #d1d8dd; font-size: 14px; transition: color .14s ease, background-color .14s ease; }
-.seller-nav a:hover { color: #fff; background: #2a343b; transform: none; }
-.seller-nav a.active { color: #fff; background: #34414a; box-shadow: inset 2px 0 #8db8dc; }
-.nav-icon { width: 18px; color: #c2cbd2; font-size: 15px; }
-.nav-badge { padding: 2px 6px; border-radius: 5px; color: #e6eaee; background: #3a454d; font-size: 12px; font-variant-numeric: tabular-nums; }
-.store-health { border-radius: 8px; background: #2a343b; }
-.store-health strong, .seller-profile strong { color: #e6eaee; font-size: 12px; font-weight: 500; }
-.store-health small, .seller-profile small { color: #b0bac2; font-size: 11px; }
-.health-dot { width: 7px; height: 7px; box-shadow: none; }
-.profile-avatar { border-radius: 8px; background: #315f8a; font-weight: 500; }
-.seller-profile button { min-width: 36px; min-height: 36px; border-radius: 7px; color: #d1d8dd; font-size: 18px; }
-.seller-profile button:hover { color: #fff; background: #34414a; }
 .seller-main { background: var(--bg); }
 .dashboard-content { max-width: 1480px; padding: 32px; font-size: 14px; }
 .dashboard-content p { font-size: 14px; line-height: 1.5; }
@@ -616,7 +564,6 @@ body { font-family: 'Inter', system-ui, sans-serif; font-size: 14px; line-height
 .status-form label { gap: 6px; color: var(--muted); font-size: 13px; }
 .status-form select { min-height: 40px; height: 40px; border-radius: 7px; font-size: 13px; }
 .status-form button { min-height: 40px; margin-top: 12px; border-radius: 7px; font-size: 14px; font-weight: 500; }
-.seller-sidebar .seller-nav a { font-weight: 400; }
 .primary-button { min-height: 40px; padding: 0 16px; border-radius: 8px; color: #fff; background: var(--purple); box-shadow: none; font-size: 14px; font-weight: 500; transition: background-color .14s ease; }
 .primary-button:hover { background: var(--purple-dark); box-shadow: none; transform: none; }
 .notification-button { border-color: var(--line); border-radius: 8px; color: var(--muted); font-size: 17px; }

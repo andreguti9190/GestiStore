@@ -19,64 +19,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-3">
-  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261110-5">
+  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261111-6">
 </head>
 <body data-websocket-url="/ws/ventas/" data-live-revision="{{ dashboard_revision }}">
-<header class="header">
-  <div class="header-inner">
-    <a href="{% url 'inicio' %}" class="header-brand">
-      <span class="brand-logo" aria-hidden="true"><img src="{% static 'tienda/images/ampere-isotipo-blanco.png' %}" alt="" width="148" height="177"></span>
-      <div class="brand-text"><div class="brand-title">AmpereStore</div><div class="brand-sub">Tecnología y componentes</div></div>
-    </a>
-    <nav class="nav-links" aria-label="Navegación principal">
-      <a href="{% url 'inicio' %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Inicio</a>
-      <a href="{% url 'lista_productos' %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Productos</a>
-    </nav>
-    <div class="header-right">
-      <div class="header-right-group header-right-group-desktop">
-        <a href="{% url 'seguridad_cuenta' %}" class="user-btn user-btn-secondary">Seguridad</a>
-        <span class="user-name">{{ user.username }}</span>
-        <form method="post" action="{% url 'logout' %}" class="inline-form">{% csrf_token %}<button type="submit" class="user-btn user-btn-logout">Salir</button></form>
-      </div>
-      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambiar a modo oscuro">
-        <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-      </button>
-      <button class="navbar-toggle" id="sidebar-open" type="button" aria-controls="seller-sidebar" aria-label="Abrir menú del panel" aria-expanded="false"><span></span><span></span><span></span></button>
-    </div>
-  </div>
-</header>
+{% include 'tienda/partials/site_header.html' %}
 <div class="dashboard-shell">
-  <aside class="seller-sidebar" id="seller-sidebar">
-    <div class="sidebar-brand">
-      <span class="sidebar-logo"><img src="{% static 'tienda/images/ampere-isotipo-blanco.png' %}" alt=""></span>
-      <span><strong>AmpereStore</strong><small>Panel vendedor</small></span>
-      <button class="sidebar-close icon-button" type="button" id="sidebar-close" aria-label="Cerrar menú">×</button>
-    </div>
-    <nav class="seller-nav" aria-label="Navegación del panel">
-      <span class="nav-caption">Gestión</span>
-      <a href="#resumen" class="active" data-section="resumen">Inicio</a>
-      <a href="#ventas" data-section="ventas">Ventas</a>
-      <a href="#pedidos" data-section="pedidos">Pedidos <span class="nav-badge">{{ page_obj.paginator.count }}</span></a>
-      <a href="#envios" data-section="envios">Envíos</a>
-      <a href="#devoluciones" data-section="devoluciones">Devoluciones{% if pending_returns %} <span class="nav-badge">{{ pending_returns|length }}</span>{% endif %}</a>
-      <a href="#clientes" data-section="clientes">Clientes</a>
-      <span class="nav-caption">Crecimiento</span>
-      <a href="#analiticas" data-section="analiticas">Analíticas</a>
-      <a href="#" data-coming-soon="Promociones">Promociones</a>
-      <a href="#finanzas" data-section="finanzas">Finanzas</a>
-    </nav>
-    <div class="sidebar-bottom">
-      <div class="store-health"><span class="health-dot"></span><div><strong>Tienda operativa</strong><small>Datos sincronizados</small></div></div>
-      <div class="seller-profile">
-        <div class="profile-avatar">{{ user.username|slice:':1'|upper }}</div>
-        <div class="profile-copy"><strong>{{ user.get_full_name|default:user.username }}</strong><small>Administrador</small></div>
-        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" aria-label="Cerrar sesión" title="Cerrar sesión">↪</button></form>
-      </div>
-    </div>
-  </aside>
-  <div class="sidebar-scrim" id="sidebar-scrim"></div>
-
   <main class="seller-main">
     <div class="dashboard-content">
       {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}"><span>{{ message }}</span><button type="button" aria-label="Cerrar">×</button></div>{% endfor %}</div>{% endif %}
@@ -169,6 +116,6 @@
 {{ shipping_map|json_script:'shipping-map-data' }}
 {{ category_chart|json_script:'category-data' }}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{% static 'tienda/js/dashboard.js' %}?v=20261110-3"></script>
+<script src="{% static 'tienda/js/dashboard.js' %}?v=20261111-1"></script>
 </body>
 </html>
