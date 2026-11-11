@@ -10,4 +10,5 @@ __pycache__/
 .env.vercel
 staticfiles/
 deployment-data.json
+.impeccable-runtime/
 

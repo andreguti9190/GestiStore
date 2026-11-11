@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T00:00:00Z",
+  "title": "Design System: AmpereStore",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Cobalt Blue", "canonical": "#315f8a" },
+      "primary-deep": { "role": "primary", "displayName": "Deep Cobalt", "canonical": "#244968" },
+      "neutral-bg": { "role": "neutral", "displayName": "Cool Mist", "canonical": "#f5f7f8" },
+      "surface": { "role": "neutral", "displayName": "White Surface", "canonical": "#ffffff" },
+      "text": { "role": "neutral", "displayName": "Ink", "canonical": "#1b2430" },
+      "text-muted": { "role": "neutral", "displayName": "Muted Slate", "canonical": "#596573" },
+      "border": { "role": "neutral", "displayName": "Cool Border", "canonical": "#d8dee4" },
+      "category-hover": { "role": "primary", "displayName": "Pale Cobalt", "canonical": "#e9f0f6" },
+      "hero-dark": { "role": "primary", "displayName": "Hero Navy", "canonical": "#172c3e" },
+      "hero-secondary": { "role": "neutral", "displayName": "Hero Pale Blue", "canonical": "#e5eef5" },
+      "icon-line": { "role": "neutral", "displayName": "Icon Blue Gray", "canonical": "#c7d7e5" },
+      "success": { "role": "success", "displayName": "Stock Green", "canonical": "#216a48" },
+      "warning": { "role": "warning", "displayName": "Low Stock Amber", "canonical": "#805b26" },
+      "danger": { "role": "error", "displayName": "Out of Stock Red", "canonical": "#a63a3a" },
+      "focus": { "role": "focus", "displayName": "Warm Focus", "canonical": "#d1a56d" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Homepage hero headline; Inter with Segoe UI and Arial fallbacks." },
+      "body": { "displayName": "Body", "purpose": "Storefront copy and controls; Inter, Noto Sans, Segoe UI, Arial." }
+    },
+    "motion": [
+      { "name": "standard", "value": "140ms–160ms ease", "purpose": "Category links, search button, and featured product hover states." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce; transition-duration: .01ms", "purpose": "Reduce transitions for users who request reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "mobile-layout", "value": "760px", "purpose": "Stack homepage hero and change category index to two columns." },
+      { "name": "small-mobile", "value": "480px", "purpose": "Stack featured product and compact search/category spacing." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Search Submit Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Cobalt action in the white homepage search field.",
+      "html": "<button class=\"ds-search-button\">Buscar</button>",
+      "css": ".ds-search-button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; color: #fff; background: #315f8a; font: 600 14px Inter, 'Noto Sans', 'Segoe UI', Arial, sans-serif; transition: background-color .16s ease; } .ds-search-button:hover { background: #244968; } .ds-search-button:focus-visible { outline: 3px solid #d1a56d; outline-offset: 3px; }"
+    },
+    {
+      "name": "Homepage Search Field",
+      "kind": "input",
+      "refersTo": "",
+      "description": "White, labeled search control with an integrated submit action.",
+      "html": "<form class=\"ds-search\" role=\"search\"><label class=\"ds-search-label\" for=\"search\">Buscar productos</label><input id=\"search\" type=\"search\" placeholder=\"Buscar un producto\"><button type=\"submit\">Buscar</button></form>",
+      "css": ".ds-search { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 6px 7px 6px 16px; border: 1px solid #d8dee4; border-radius: 9px; background: #fff; } .ds-search-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); } .ds-search input { min-width: 0; height: 44px; flex: 1; border: 0; color: #1b2430; background: transparent; font: 400 15px Inter, 'Noto Sans', 'Segoe UI', Arial, sans-serif; } .ds-search input:focus-visible { outline: 2px solid #315f8a; outline-offset: 2px; } .ds-search button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; color: #fff; background: #315f8a; }"
+    },
+    {
+      "name": "Featured Recent Product",
+      "kind": "card",
+      "refersTo": "product-index",
+      "description": "Real product image, category, availability, and ARS price inside the hero.",
+      "html": "<article class=\"ds-feature\"><div class=\"ds-feature-media\">Product image</div><div class=\"ds-feature-data\"><span>Ingreso reciente · En stock</span><small>Componentes PC</small><strong>Product name</strong><b>ARS $12.000</b></div></article>",
+      "css": ".ds-feature { overflow: hidden; border: 1px solid rgba(255,255,255,.3); border-radius: 12px; color: #1b2430; background: #fff; } .ds-feature-media { display: grid; min-height: 220px; place-items: center; background: #f5f7f8; } .ds-feature-data { display: grid; gap: 8px; padding: 17px 20px 19px; font: 400 12px/1.4 Inter, 'Noto Sans', 'Segoe UI', Arial, sans-serif; } .ds-feature-data small { color: #315f8a; } .ds-feature-data strong { font-size: 17px; font-weight: 600; } .ds-feature-data b { font-size: 19px; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Category Index Row",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "Linked category row with icon, border separators, and pale-blue hover.",
+      "html": "<a class=\"ds-category\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\"/></svg><span>Componentes PC</span><svg aria-hidden=\"true\" viewBox=\"0 0 20 20\"><path d=\"M5 10h10m-4-4 4 4-4 4\"/></svg></a>",
+      "css": ".ds-category { display: grid; grid-template-columns: 24px 1fr 16px; min-height: 70px; align-items: center; gap: 10px; padding: 12px 14px; border-right: 1px solid #d8dee4; border-bottom: 1px solid #d8dee4; color: #1b2430; background: #fff; font: 500 13px/1.3 Inter, 'Noto Sans', 'Segoe UI', Arial, sans-serif; text-decoration: none; transition: color .14s ease, background-color .14s ease; } .ds-category:hover { color: #315f8a; background: #e9f0f6; } .ds-category:focus-visible { outline: 3px solid #d1a56d; outline-offset: 3px; }"
+    },
+    {
+      "name": "Recent Product Card",
+      "kind": "card",
+      "refersTo": "product-index",
+      "description": "Flat bordered product tile with aligned price and explicit stock text.",
+      "html": "<article class=\"ds-product\"><div class=\"ds-product-media\">Product image</div><div class=\"ds-product-body\"><small>Componentes PC</small><strong>Product name</strong><b>ARS $12.000</b><span>En stock</span></div></article>",
+      "css": ".ds-product { overflow: hidden; border: 1px solid #d8dee4; border-radius: 12px; color: #1b2430; background: #fff; } .ds-product-media { display: grid; height: 196px; place-items: center; border-bottom: 1px solid #d8dee4; background: #eef1f3; } .ds-product-body { display: grid; gap: 5px; padding: 15px 16px 17px; font: 400 14px/1.35 Inter, 'Noto Sans', 'Segoe UI', Arial, sans-serif; } .ds-product-body small { color: #315f8a; } .ds-product-body strong { font-weight: 550; } .ds-product-body b { margin-top: 6px; font-size: 16px; font-variant-numeric: tabular-nums; } .ds-product-body span { color: #216a48; font-size: 12px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Índice de repuestos",
+    "overview": "AmpereStore presents a clear technology catalogue in its existing cobalt identity. The homepage guides shoppers from search or category to real products, with price in ARS and availability visible. Its blue hero frames the featured product; the rest of the catalogue stays flat and easy to scan.",
+    "keyCharacteristics": ["Cobalt wayfinding and actions", "Direct category-to-product paths", "Visible ARS prices and stock labels", "Border-led product surfaces"],
+    "rules": [
+      { "name": "Verified Claims", "body": "Do not introduce delivery, price-leadership, compatibility, or performance promises without evidence.", "section": "overview" },
+      { "name": "Scan First", "body": "Keep price and availability readable and preserve real product imagery and existing routes.", "section": "components" }
+    ],
+    "dos": ["Do preserve the AmpereStore logo, blue identity, and current functions.", "Do keep prices and stock states legible."],
+    "donts": ["Don't invent service or performance claims.", "Don't replace product photography with invented imagery."]
+  }
+}
