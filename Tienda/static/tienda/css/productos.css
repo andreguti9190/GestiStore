@@ -309,7 +309,16 @@ transform: translateY(-3px); box-shadow: var(--amp-shadow-hover); border-color: 
   z-index: 0;
 }
 .inicio-hero-content { max-width: 600px; }
-.inicio-hero-badge { background: transparent; border: 1px solid var(--amp-copper); color: var(--amp-copper-soft); }
+.inicio-hero-badge {
+  background: var(--amp-ice);
+  border: 1px solid var(--amp-border-strong);
+  color: var(--amp-indigo);
+}
+html[data-theme="dark"] .inicio-hero-badge {
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(201, 154, 90, .65);
+  color: var(--amp-copper-soft);
+}
 .inicio-hero h1 { font-size: 2.7rem; line-height: 1.12; letter-spacing: -.03em; max-width: 14ch; }
 .inicio-hero p { max-width: 46ch; }
 

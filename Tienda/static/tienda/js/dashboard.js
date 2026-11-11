@@ -2,8 +2,10 @@
   'use strict';
 
   var root = document.documentElement;
-  var storedTheme = localStorage.getItem('ampere-dashboard-theme');
-  if (storedTheme === 'dark' || storedTheme === 'light') root.dataset.theme = storedTheme;
+  var themeStorageKey = 'amp-theme';
+  var storedTheme = localStorage.getItem(themeStorageKey);
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = storedTheme === 'dark' || (storedTheme !== 'light' && prefersDark) ? 'dark' : 'light';
 
   function themeColors() {
     var styles = getComputedStyle(root);
@@ -19,24 +21,29 @@
   var themeToggle = document.getElementById('theme-toggle');
   function updateThemeIcon() {
     var icon = document.querySelector('.theme-icon');
-    if (icon) icon.textContent = root.dataset.theme === 'dark' ? '☀' : '☾';
+    var isDark = root.dataset.theme === 'dark';
+    if (icon) icon.textContent = isDark ? '☀' : '☾';
+    if (themeToggle) themeToggle.setAttribute('aria-label', isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
   }
   updateThemeIcon();
   if (themeToggle) themeToggle.addEventListener('click', function () {
     root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('ampere-dashboard-theme', root.dataset.theme);
+    localStorage.setItem(themeStorageKey, root.dataset.theme);
     updateThemeIcon();
     drawAllCharts();
   });
 
   var sidebar = document.getElementById('seller-sidebar');
   var scrim = document.getElementById('sidebar-scrim');
+  var sidebarOpenButton = document.getElementById('sidebar-open');
+  var sidebarCloseButton = document.getElementById('sidebar-close');
   function setSidebar(open) {
     sidebar.classList.toggle('open', open);
     scrim.classList.toggle('open', open);
+    sidebarOpenButton.setAttribute('aria-expanded', String(open));
   }
-  document.getElementById('sidebar-open').addEventListener('click', function () { setSidebar(true); });
-  document.getElementById('sidebar-close').addEventListener('click', function () { setSidebar(false); });
+  sidebarOpenButton.addEventListener('click', function () { setSidebar(true); });
+  sidebarCloseButton.addEventListener('click', function () { setSidebar(false); });
   scrim.addEventListener('click', function () { setSidebar(false); });
   document.querySelectorAll('.seller-nav a[href^="#"]').forEach(function (link) {
     link.addEventListener('click', function () { setSidebar(false); });
@@ -60,11 +67,11 @@
   }
   bindPeriodControl();
 
-  var searchInput = document.querySelector('.global-search input[name="q"]');
+  var searchInput = document.querySelector('.table-filters input[name="q"]');
   document.addEventListener('keydown', function (event) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      searchInput.focus();
+      if (searchInput) searchInput.focus();
     }
     if (event.key === 'Escape') {
       closeModals();

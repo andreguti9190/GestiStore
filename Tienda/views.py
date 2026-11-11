@@ -2324,7 +2324,7 @@ def exportar_ventas_csv(request):
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="reporte-ventas-amperestore.csv"'
     response.write('\ufeff')
-    writer = csv.writer(response)
+    writer = csv.writer(response, delimiter=';', lineterminator='\r\n')
     writer.writerow(['Pedido', 'Fecha', 'Cliente', 'Email', 'Total', 'Pago', 'Envío', 'Método'])
     ventas = Venta.objects.select_related('usuario').order_by('-fecha_venta')
     for venta in ventas:
@@ -2334,4 +2334,37 @@ def exportar_ventas_csv(request):
             venta.total, venta.get_estado_pago_display(), venta.get_estado_envio_display(),
             venta.get_metodo_pago_display(),
         ])
+    return response
+
+
+@login_required
+@solo_admin
+def exportar_ventas_excel(request):
+    from .excel_export import create_sales_workbook
+
+    headers = ['Pedido', 'Fecha', 'Cliente', 'Email', 'Total', 'Pago', 'Envío', 'Método']
+    ventas = Venta.objects.select_related('usuario').order_by('-fecha_venta')
+    rows = (
+        [
+            venta.codigo,
+            timezone.localtime(venta.fecha_venta),
+            venta.usuario.get_full_name() or venta.usuario.username,
+            venta.usuario.email,
+            venta.total,
+            venta.get_estado_pago_display(),
+            venta.get_estado_envio_display(),
+            venta.get_metodo_pago_display(),
+        ]
+        for venta in ventas
+    )
+    content = create_sales_workbook(
+        headers,
+        rows,
+        widths=[16, 22, 28, 34, 17, 20, 20, 22],
+    )
+    response = HttpResponse(
+        content,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="reporte-ventas-amperestore.xlsx"'
     return response

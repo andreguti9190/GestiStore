@@ -4,12 +4,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    (function () {
+      var saved = localStorage.getItem('amp-theme');
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', saved === 'dark' || (saved !== 'light' && prefersDark) ? 'dark' : 'light');
+    })();
+  </script>
   <title>AmpereStore{% block title %}{% endblock %}</title>
   <link rel="icon" type="image/png" href="{% static 'tienda/images/ampere-isotipo-azul.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261026-16">
+  <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-1">
 </head>
 <body>
 
@@ -142,19 +149,25 @@
   var root = document.documentElement;
   var storageKey = 'amp-theme';
   var savedTheme = localStorage.getItem(storageKey);
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    root.setAttribute('data-theme', 'dark');
+  function applyTheme(theme) {
+    var isDark = theme === 'dark';
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    localStorage.setItem(storageKey, isDark ? 'dark' : 'light');
+    var nextLabel = isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+    if (themeToggle) themeToggle.setAttribute('aria-label', nextLabel);
+    if (mobileThemeToggle) {
+      mobileThemeToggle.setAttribute('aria-label', nextLabel);
+      var mobileLabel = mobileThemeToggle.querySelector('.mobile-theme-label');
+      if (mobileLabel) mobileLabel.textContent = nextLabel;
+    }
+  }
+  if (savedTheme === 'dark' || savedTheme === 'light') {
+    applyTheme(savedTheme);
   } else {
-    root.removeAttribute('data-theme');
+    applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   }
   function toggleTheme() {
-    if (root.getAttribute('data-theme') === 'dark') {
-      root.removeAttribute('data-theme');
-      localStorage.setItem(storageKey, 'light');
-    } else {
-      root.setAttribute('data-theme', 'dark');
-      localStorage.setItem(storageKey, 'dark');
-    }
+    applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
   }
   if (themeToggle) {
     themeToggle.addEventListener('click', toggleTheme);

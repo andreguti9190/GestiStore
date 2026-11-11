@@ -37,7 +37,7 @@ position: absolute; inset: 0; z-index: 1;
   display: inline-flex; align-items: center; align-self: flex-start;
   padding: 3px 12px; border-radius: 20px;
   font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; background: rgba(255,255,255,0.15);
+  letter-spacing: 0.04em; background: rgb(255, 255, 255,1);
   color: var(--amp-white); margin-bottom: 16px;
 }
 .carrito-card-nombre {

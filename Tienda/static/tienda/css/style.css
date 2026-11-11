@@ -27,6 +27,16 @@
   --amp-radius: 16px;
   /* Índigo para texto pequeño sobre botones: mejor contraste que el azul medio. */
   --amp-action: #455892;
+  /* Alias semánticos usados por los estilos recientes. */
+  --amp-bg: var(--amp-ice);
+  --amp-surface: var(--amp-white);
+  --amp-surface-2: #f7f9fc;
+  --amp-text-secondary: var(--amp-muted);
+  --amp-primary-strong: var(--amp-action);
+  --amp-accent: var(--amp-gold);
+  --amp-copper: var(--amp-gold);
+  --amp-copper-soft: #8b6238;
+  --amp-body-font: 'Inter', 'Noto Sans', 'Segoe UI', Arial, sans-serif;
   --amp-heading-font: 'Poppins', 'Segoe UI', Arial, sans-serif;
   --amp-header-height: 80px;
   color-scheme: light;
@@ -57,6 +67,15 @@
   --amp-shadow: 0 4px 18px rgba(0, 0, 0, .35);
   --amp-shadow-hover: 0 12px 30px rgba(0, 0, 0, .5);
   --amp-action: #7a8bd6;
+  --amp-bg: var(--amp-ice);
+  --amp-surface: var(--amp-white);
+  --amp-surface-2: #222640;
+  --amp-text-secondary: var(--amp-muted);
+  --amp-primary-strong: var(--amp-indigo);
+  --amp-accent: var(--amp-gold);
+  --amp-copper: var(--amp-gold);
+  --amp-copper-soft: #f0d8b6;
+  --amp-body-font: 'Inter', 'Noto Sans', 'Segoe UI', Arial, sans-serif;
   color-scheme: dark;
 }
 
