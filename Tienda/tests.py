@@ -3,9 +3,10 @@ import json
 import hashlib
 import hmac
 import time
+from contextlib import redirect_stdout
 from datetime import timedelta
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -25,7 +26,7 @@ from cryptography import x509
 from webauthn.helpers import bytes_to_base64url
 
 from scripts.generar_certificado_https import generate_certificate
-from scripts.iniciar_facil import _tunnel_url
+from scripts.iniciar_facil import _generate_public_qr, _tunnel_url
 from .models import (
     CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
     Perfil, Producto, SolicitudDevolucion, Venta,
@@ -791,6 +792,19 @@ class CertificadoHttpsTests(TestCase):
 
 
 class InicioFacilTests(TestCase):
+    def test_genera_qr_png_con_el_enlace_publico(self):
+        with TemporaryDirectory() as directory:
+            with (
+                patch('scripts.iniciar_facil.RUNTIME_DIR', Path(directory)),
+                redirect_stdout(StringIO()),
+            ):
+                qr_path = _generate_public_qr(
+                    'https://ampere-demo.trycloudflare.com'
+                )
+
+            self.assertEqual(qr_path.name, 'amperestore-qr.png')
+            self.assertEqual(qr_path.read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
+
     def test_extrae_solamente_un_enlace_https_de_cloudflare(self):
         output = (
             'INF Your quick Tunnel has been created! '
@@ -1642,7 +1656,10 @@ class AsistenteGuiadoTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    @override_settings(OPENAI_API_KEY='test-key', OPENAI_CHAT_MODEL='gpt-6-luna')
+    @override_settings(
+        OPENAI_API_KEY='test-key', OPENAI_CHAT_MODEL='gpt-6-luna',
+        OPENAI_INCLUDE_STORE_CONTEXT=True,
+    )
     def test_consulta_libre_usa_responses_api_sin_guardar_respuesta(self):
         api_result = BytesIO(json.dumps({
             'output': [{
@@ -1663,7 +1680,10 @@ class AsistenteGuiadoTests(TestCase):
         self.assertEqual(payload['model'], 'gpt-6-luna')
         self.assertFalse(payload['store'])
         self.assertEqual(payload['input'][-1]['content'], '¿Tienen mouse?')
-        self.assertNotIn('Mouse', payload['instructions'])
+        self.assertIn('Mouse', payload['instructions'])
+        self.assertIn('Respondé siempre en texto plano', payload['instructions'])
+        self.assertIn('no se comparten con el asistente externo', payload['instructions'])
+        self.assertNotIn('Último pedido', payload['instructions'])
 
     @override_settings(OPENAI_API_KEY='')
     def test_consulta_libre_exige_configuracion_server_side(self):

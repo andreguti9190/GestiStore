@@ -146,6 +146,51 @@
 .compra-card-header { border-top-color: var(--amp-night); }
 .compra-codigo { color: var(--amp-indigo); }
 
+/* Historial y seguimiento */
+.mis-compras-header { gap: 20px; margin-bottom: 24px; }
+.mis-compras-header h1 { font-size: 30px; font-weight: 500; }
+.mis-compras-sub { color: var(--amp-text-secondary); font-size: 14px; }
+.mis-compras-lista { gap: 16px; }
+.compra-card, .mis-compras-vacio { border-color: var(--amp-border); border-radius: 12px; background: var(--amp-surface); box-shadow: none; }
+.compra-card-header { gap: 16px; padding: 16px 20px; border-top: 2px solid var(--amp-primary); border-bottom-color: var(--amp-border); background: var(--amp-surface-2); }
+.compra-codigo { color: var(--amp-text); font: 500 16px/1.3 var(--amp-body-font); letter-spacing: 0; }
+.compra-fecha { color: var(--amp-muted); font-size: 13px; }
+.compra-total { color: var(--amp-text); font: 500 18px/1.3 var(--amp-body-font); font-variant-numeric: tabular-nums; }
+.compra-card-body { padding: 20px; }
+.compra-metodo { padding-bottom: 12px; margin-bottom: 12px; font-size: 14px; }
+.compra-label { color: var(--amp-muted); }
+.compra-productos { gap: 0; }
+.compra-producto { gap: 12px; min-height: 64px; padding: 12px 0; }
+.compra-producto-img { width: 48px; height: 48px; border-radius: 7px; background: var(--amp-surface-2); }
+.compra-producto-nombre { color: var(--amp-text); font-size: 14px; font-weight: 500; }
+.compra-producto-detalle { color: var(--amp-muted); font-size: 13px; }
+.compra-producto-subtotal { color: var(--amp-text); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.purchase-shipping { margin: 12px 0 16px; padding: 16px; border-radius: 10px; background: var(--amp-surface-2); }
+.shipping-pill { padding: 3px 8px; border-radius: 5px; font-size: 12px; font-weight: 500; }
+.shipping-pendiente, .shipping-preparando { color: var(--amp-warning); background: var(--amp-warning-bg); }
+.shipping-enviado { color: var(--amp-primary); background: var(--amp-surface); }
+.shipping-entregado { color: var(--amp-success); background: var(--amp-success-bg); }
+.shipping-cancelado { color: var(--amp-danger); background: var(--amp-danger-bg); }
+.shipping-timeline { margin: 24px 12px 30px; }
+.shipping-timeline span { flex-basis: 28px; height: 28px; border-width: 1px; font-size: 12px; }
+.shipping-timeline span.done { border-color: var(--amp-primary); color: #fff; background: var(--amp-primary); }
+.shipping-timeline span small { top: 33px; color: var(--amp-muted); font-size: 11px; }
+.shipping-address { color: var(--amp-text-secondary); font-size: 13px; }
+.shipping-address strong, .shipping-address b { color: var(--amp-text); }
+.purchase-map { border-color: var(--amp-border); border-radius: 10px; }
+.map-grid-fallback { background: var(--amp-surface-2) !important; background-image: none !important; }
+.map-grid-fallback::after { right: 8px; bottom: 8px; padding: 4px 8px; border-color: var(--amp-border); border-radius: 6px; color: var(--amp-muted); background: var(--amp-surface); font-size: 12px; }
+.return-status, .return-request { margin-bottom: 16px; padding: 16px; border-color: var(--amp-border); border-radius: 10px; background: var(--amp-surface); }
+.return-status { border-left-width: 2px; }
+.return-status span, .return-status p { font-size: 13px; }
+.return-request summary { color: var(--amp-text); font-weight: 500; }
+.return-request label { gap: 6px; color: var(--amp-text-secondary); font-size: 13px; }
+.return-request select, .return-request textarea { border-color: var(--amp-border); border-radius: 7px; color: var(--amp-text); background: var(--amp-surface); }
+.mis-compras-vacio { padding: 56px 24px; }
+.mis-compras-vacio-icon { width: 52px; height: 52px; border-radius: 10px; color: var(--amp-muted); background: var(--amp-surface-2); }
+.mis-compras-vacio h2 { margin-bottom: 8px; color: var(--amp-text); font: 500 22px/1.3 var(--amp-heading-font); }
+.mis-compras-vacio p { color: var(--amp-text-secondary); font-size: 14px; }
+
 /* ─── HISTORIAL DE VENTAS (ADMIN) ─────────── */
 .historial-grupo { margin-bottom: 36px; }
 .historial-usuario {
@@ -167,3 +212,9 @@
 @media (max-width: 480px) {
   .historial-usuario { flex-direction: column; align-items: flex-start; gap: 4px; }
 }
+.historial-grupo { margin-bottom: 24px; }
+.historial-usuario { gap: 12px; padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--amp-border); border-left: 2px solid var(--amp-primary); border-radius: 10px; background: var(--amp-surface); }
+.historial-usuario-nombre { color: var(--amp-text); font: 500 16px/1.3 var(--amp-body-font); }
+.historial-usuario-nombre svg { color: var(--amp-muted); }
+.historial-usuario-resumen { color: var(--amp-muted); font-size: 13px; }
+.historial-usuario-resumen strong { color: var(--amp-text); font-weight: 500; }

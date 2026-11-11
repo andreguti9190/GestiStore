@@ -27,6 +27,7 @@ LOCAL_PACKAGES_DIR = RUNTIME_DIR / "python-packages"
 REQUIRED_IMPORTS = {
     "Django": "django",
     "Pillow": "PIL",
+    "qrcode": "qrcode",
     "webauthn": "webauthn",
     "uvicorn": "uvicorn",
     "websockets": "websockets",
@@ -296,6 +297,33 @@ def _copy_to_clipboard(value):
     return result.returncode == 0
 
 
+def _generate_public_qr(public_url):
+    """Crea un QR compartible y devuelve la ruta de su imagen PNG."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_M
+
+    RUNTIME_DIR.mkdir(exist_ok=True)
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(public_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#0b1220", back_color="white")
+    qr_path = RUNTIME_DIR / "amperestore-qr.png"
+    image.save(qr_path)
+
+    print("\nEscaneá este código QR con la cámara del celular:\n")
+    try:
+        qr.print_ascii(out=sys.stdout, tty=False, invert=True)
+    except (OSError, UnicodeError):
+        print("El QR no pudo dibujarse en esta consola, pero la imagen fue creada.")
+    print(f"\nImagen del QR: {qr_path}\n")
+    return qr_path
+
+
 def _open_browser_when_server_is_ready(local_port, public_url):
     """Abre el túnel solo después de recibir una página de login válida."""
     public_host = urlparse(public_url).hostname
@@ -382,12 +410,16 @@ def main():
     print("AMPERESTORE ESTÁ LISTO")
     print("=" * 68)
     print(f"\nEnlace para PC o celular:\n{public_url}\n")
+    qr_path = _generate_public_qr(public_url)
     if not args.no_clipboard and _copy_to_clipboard(public_url):
         print("El enlace quedó copiado. Podés pegarlo y compartirlo.")
     print("Para usarlo en un celular, enviá o pegá allí este mismo enlace.")
     print("No hay que instalar certificados ni estar en el mismo Wi-Fi.")
     print("El enlace funciona mientras esta ventana permanezca abierta.")
     print("Para cerrar AmpereStore presioná Ctrl+C.\n")
+
+    if not args.no_browser:
+        webbrowser.open(qr_path.as_uri())
 
     closing = threading.Event()
     try:

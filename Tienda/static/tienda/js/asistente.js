@@ -33,15 +33,30 @@
     }
   }
 
+  function cleanAssistantText(text) {
+    return String(text == null ? '' : text)
+      .replace(/```(?:\w+)?\s*([\s\S]*?)```/g, '$1')
+      .replace(/`([^`\n]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s*[*+]\s+/gm, '- ')
+      .replace(/^>\s?/gm, '')
+      .replace(/(\*\*|__)(.*?)\1/g, '$2')
+      .replace(/(\*|_)([^*_\n]+)\1/g, '$2')
+      .replace(/\*/g, '')
+      .trim();
+  }
+
   function appendMessage(kind, text, persist) {
     var bubble = document.createElement('p');
     bubble.className = 'assistant-bubble ' + (kind === 'customer' ? 'customer' : 'bot');
     if (kind === 'error') bubble.classList.add('error');
-    bubble.textContent = text;
+    var displayText = kind === 'bot' ? cleanAssistantText(text) : text;
+    bubble.textContent = displayText;
     messages.appendChild(bubble);
     messages.scrollTop = messages.scrollHeight;
     if (persist !== false) {
-      state.messages.push({ kind: kind, text: text });
+      state.messages.push({ kind: kind, text: displayText });
       state.messages = state.messages.slice(-40);
       saveState();
     }

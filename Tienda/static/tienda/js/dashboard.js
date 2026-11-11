@@ -2,8 +2,10 @@
   'use strict';
 
   var root = document.documentElement;
-  var storedTheme = localStorage.getItem('ampere-dashboard-theme');
-  if (storedTheme === 'dark' || storedTheme === 'light') root.dataset.theme = storedTheme;
+  var themeStorageKey = 'amp-theme';
+  var storedTheme = localStorage.getItem(themeStorageKey);
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = storedTheme === 'dark' || (storedTheme !== 'light' && prefersDark) ? 'dark' : 'light';
 
   function themeColors() {
     var styles = getComputedStyle(root);
@@ -12,34 +14,64 @@
       muted: styles.getPropertyValue('--muted').trim(),
       line: styles.getPropertyValue('--line').trim(),
       purple: styles.getPropertyValue('--purple').trim(),
-      surface: styles.getPropertyValue('--surface').trim()
+      surface: styles.getPropertyValue('--surface').trim(),
+      area: styles.getPropertyValue('--chart-area').trim()
     };
+  }
+
+  function themeStatusColors() {
+    var styles = getComputedStyle(root);
+    return ['--chart-pending', '--chart-preparing', '--chart-sent', '--chart-delivered', '--chart-cancelled']
+      .map(function (name) { return styles.getPropertyValue(name).trim(); });
   }
 
   var themeToggle = document.getElementById('theme-toggle');
   function updateThemeIcon() {
     var icon = document.querySelector('.theme-icon');
-    if (icon) icon.textContent = root.dataset.theme === 'dark' ? '☀' : '☾';
+    var isDark = root.dataset.theme === 'dark';
+    if (icon) icon.textContent = isDark ? '☀' : '☾';
+    if (themeToggle) themeToggle.setAttribute('aria-label', isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
   }
   updateThemeIcon();
   if (themeToggle) themeToggle.addEventListener('click', function () {
     root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('ampere-dashboard-theme', root.dataset.theme);
+    localStorage.setItem(themeStorageKey, root.dataset.theme);
     updateThemeIcon();
+    chartColors = themeStatusColors();
     drawAllCharts();
   });
 
-  var sidebar = document.getElementById('seller-sidebar');
-  var scrim = document.getElementById('sidebar-scrim');
-  function setSidebar(open) {
-    sidebar.classList.toggle('open', open);
-    scrim.classList.toggle('open', open);
+  var menuToggle = document.getElementById('navbar-toggle');
+  var mobileMenu = document.getElementById('mobile-menu');
+  var mobileThemeToggle = document.getElementById('mobile-theme-toggle');
+  function setMobileMenuOpen(open) {
+    if (!menuToggle || !mobileMenu) return;
+    mobileMenu.classList.toggle('open', open);
+    menuToggle.classList.toggle('active', open);
+    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menuToggle.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú');
   }
-  document.getElementById('sidebar-open').addEventListener('click', function () { setSidebar(true); });
-  document.getElementById('sidebar-close').addEventListener('click', function () { setSidebar(false); });
-  scrim.addEventListener('click', function () { setSidebar(false); });
-  document.querySelectorAll('.seller-nav a[href^="#"]').forEach(function (link) {
-    link.addEventListener('click', function () { setSidebar(false); });
+  if (menuToggle && mobileMenu) {
+    menuToggle.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setMobileMenuOpen(!mobileMenu.classList.contains('open'));
+    });
+    mobileMenu.addEventListener('click', function (event) {
+      if (event.target.closest('a')) setMobileMenuOpen(false);
+    });
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest('.header') && !event.target.closest('#mobile-menu')) setMobileMenuOpen(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && mobileMenu.classList.contains('open')) {
+        setMobileMenuOpen(false);
+        menuToggle.focus();
+      }
+    });
+  }
+  if (mobileThemeToggle && themeToggle) mobileThemeToggle.addEventListener('click', function () {
+    themeToggle.click();
+    setMobileMenuOpen(false);
   });
 
   function bindPeriodControl() {
@@ -60,15 +92,14 @@
   }
   bindPeriodControl();
 
-  var searchInput = document.querySelector('.global-search input[name="q"]');
+  var searchInput = document.querySelector('.table-filters input[name="q"]');
   document.addEventListener('keydown', function (event) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      searchInput.focus();
+      if (searchInput) searchInput.focus();
     }
     if (event.key === 'Escape') {
       closeModals();
-      setSidebar(false);
     }
   });
 
@@ -169,7 +200,7 @@
   var shippingData = jsonData('shipping-data');
   var shippingMapData = jsonData('shipping-map-data');
   var categoryData = jsonData('category-data');
-  var chartColors = ['#6d5ce7', '#ed8a34', '#3b82f6', '#18a875', '#dc5570'];
+  var chartColors = themeStatusColors();
 
   function initShippingMap() {
     var container = document.getElementById('seller-shipping-map');
@@ -233,7 +264,7 @@
     var values = salesData.map(function (item) { return Number(item.value) || 0; });
     var max = Math.max.apply(null, values.concat([1]));
     ctx.clearRect(0, 0, width, height);
-    ctx.font = '9px Inter';
+    ctx.font = '11px Inter';
     ctx.textBaseline = 'middle';
     for (var tick = 0; tick <= 4; tick += 1) {
       var y = pad.top + (height - pad.top - pad.bottom) * tick / 4;
@@ -255,9 +286,7 @@
     var points = salesData.map(function (item, index) {
       return { x: pad.left + (salesData.length === 1 ? innerWidth / 2 : innerWidth * index / (salesData.length - 1)), y: pad.top + innerHeight * (1 - (Number(item.value) || 0) / max) };
     });
-    var gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-    gradient.addColorStop(0, 'rgba(109,92,231,.28)'); gradient.addColorStop(1, 'rgba(109,92,231,0)');
-    ctx.beginPath(); ctx.moveTo(points[0].x, height - pad.bottom); points.forEach(function (point) { ctx.lineTo(point.x, point.y); }); ctx.lineTo(points[points.length - 1].x, height - pad.bottom); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(points[0].x, height - pad.bottom); points.forEach(function (point) { ctx.lineTo(point.x, point.y); }); ctx.lineTo(points[points.length - 1].x, height - pad.bottom); ctx.closePath(); ctx.fillStyle = colors.area; ctx.fill();
     ctx.beginPath(); points.forEach(function (point, index) { if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); }); ctx.strokeStyle = colors.purple; ctx.lineWidth = 2.3; ctx.lineJoin = 'round'; ctx.stroke();
     points.forEach(function (point) { ctx.beginPath(); ctx.arc(point.x, point.y, 3, 0, Math.PI * 2); ctx.fillStyle = colors.surface; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = colors.purple; ctx.stroke(); });
     ctx.fillStyle = colors.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -354,10 +383,6 @@
     parsed.querySelectorAll('.order-modal').forEach(function (modal) {
       document.body.appendChild(document.importNode(modal, true));
     });
-
-    var incomingBadge = parsed.querySelector('.nav-badge');
-    var currentBadge = document.querySelector('.nav-badge');
-    if (incomingBadge && currentBadge) currentBadge.textContent = incomingBadge.textContent;
 
     salesData = jsonData('sales-series', parsed);
     shippingData = jsonData('shipping-data', parsed);

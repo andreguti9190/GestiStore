@@ -19,6 +19,9 @@ enlace se puede enviar o pegar en cualquier celular o computadora. Los demás di
 que instalar certificados, descargar una app, estar en el mismo Wi-Fi ni configurar el firewall.
 El enlace funciona mientras la ventana del iniciador permanezca abierta.
 
+También genera automáticamente `.runtime/amperestore-qr.png`, muestra el QR en la consola y abre
+la imagen para que cualquier persona pueda entrar escaneándola con la cámara del celular.
+
 Este modo usa un túnel rápido gratuito de Cloudflare. En la primera ejecución, la PC que hospeda
 AmpereStore prepara automáticamente las dependencias de Python dentro de `.runtime` y el componente
 oficial `cloudflared`; las personas que abren el
@@ -297,6 +300,9 @@ conexión desde una instancia diferente.
 ```powershell
 python manage.py test Tienda
 ```
+
+El prompt listo para generar las diapositivas y el guion oral del backend está
+en [`PROMPT_PRESENTACION_BACKEND.md`](PROMPT_PRESENTACION_BACKEND.md).
 
 ---
 
