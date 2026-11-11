@@ -52,6 +52,8 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+CENTAVO = Decimal('0.01')
+
 from .models import (
     CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
     Perfil, Producto, SolicitudDevolucion, Venta,
@@ -216,12 +218,12 @@ def csrf_failure(request, reason=''):
 @login_required
 def inicio(request):
     productos = Producto.objects.filter(activo=True).order_by('-fecha_creacion')
-    destacados = productos[:8]
-    total_productos = Producto.objects.filter(activo=True).count()
+    destacado = productos.first()
+    destacados = productos[1:9] if destacado else productos.none()
     categorias = Producto.CATEGORIA_CHOICES
     return render(request, 'tienda/inicio.html', {
+        'destacado': destacado,
         'destacados': destacados,
-        'total_productos': total_productos,
         'categorias': categorias,
     })
 
@@ -1200,9 +1202,9 @@ def ver_carrito(request):
         return redirect('historial_ventas')
     carrito = request.session.get('carrito', {})
     items = []
-    total = 0
+    total = Decimal('0.00')
     for key, item in carrito.items():
-        subtotal = item['producto_precio'] * item['cantidad']
+        subtotal = (Decimal(str(item['producto_precio'])) * item['cantidad']).quantize(CENTAVO)
         total += subtotal
         items.append({**item, 'subtotal': subtotal, 'key': key})
     return render(request, 'tienda/carrito.html', {'items': items, 'total': total})
@@ -1231,9 +1233,9 @@ def confirmar_compra(request):
     request.session.pop('purchase_face_auth', None)
 
     items = []
-    total = 0
+    total = Decimal('0.00')
     for key, item in carrito.items():
-        subtotal = item['producto_precio'] * item['cantidad']
+        subtotal = (Decimal(str(item['producto_precio'])) * item['cantidad']).quantize(CENTAVO)
         total += subtotal
         items.append({**item, 'subtotal': subtotal, 'key': key})
 
@@ -1782,7 +1784,7 @@ def procesar_pago(request):
     # La venta y el descuento de stock se confirman como una sola operación.
     with transaction.atomic():
         productos = {}
-        total = 0
+        total = Decimal('0.00')
         for item in carrito.values():
             producto = get_object_or_404(
                 Producto.objects.select_for_update(),
@@ -1792,7 +1794,7 @@ def procesar_pago(request):
                 messages.error(request, f'No hay stock suficiente de "{producto.nombre}".')
                 return redirect('ver_carrito')
             productos[producto.pk] = producto
-            total += producto.precio * item['cantidad']
+            total += (producto.precio * item['cantidad']).quantize(CENTAVO)
 
         venta = Venta.objects.create(
             usuario=request.user,
@@ -2322,7 +2324,7 @@ def exportar_ventas_csv(request):
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="reporte-ventas-amperestore.csv"'
     response.write('\ufeff')
-    writer = csv.writer(response)
+    writer = csv.writer(response, delimiter=';', lineterminator='\r\n')
     writer.writerow(['Pedido', 'Fecha', 'Cliente', 'Email', 'Total', 'Pago', 'Envío', 'Método'])
     ventas = Venta.objects.select_related('usuario').order_by('-fecha_venta')
     for venta in ventas:
@@ -2332,4 +2334,37 @@ def exportar_ventas_csv(request):
             venta.total, venta.get_estado_pago_display(), venta.get_estado_envio_display(),
             venta.get_metodo_pago_display(),
         ])
+    return response
+
+
+@login_required
+@solo_admin
+def exportar_ventas_excel(request):
+    from .excel_export import create_sales_workbook
+
+    headers = ['Pedido', 'Fecha', 'Cliente', 'Email', 'Total', 'Pago', 'Envío', 'Método']
+    ventas = Venta.objects.select_related('usuario').order_by('-fecha_venta')
+    rows = (
+        [
+            venta.codigo,
+            timezone.localtime(venta.fecha_venta),
+            venta.usuario.get_full_name() or venta.usuario.username,
+            venta.usuario.email,
+            venta.total,
+            venta.get_estado_pago_display(),
+            venta.get_estado_envio_display(),
+            venta.get_metodo_pago_display(),
+        ]
+        for venta in ventas
+    )
+    content = create_sales_workbook(
+        headers,
+        rows,
+        widths=[16, 22, 28, 34, 17, 20, 20, 22],
+    )
+    response = HttpResponse(
+        content,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="reporte-ventas-amperestore.xlsx"'
     return response

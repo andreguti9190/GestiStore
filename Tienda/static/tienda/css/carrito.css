@@ -37,7 +37,7 @@ position: absolute; inset: 0; z-index: 1;
   display: inline-flex; align-items: center; align-self: flex-start;
   padding: 3px 12px; border-radius: 20px;
   font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; background: rgba(255,255,255,0.15);
+  letter-spacing: 0.04em; background: rgb(255, 255, 255,1);
   color: var(--amp-white); margin-bottom: 16px;
 }
 .carrito-card-nombre {
@@ -139,3 +139,43 @@ font-size: .75rem; color: var(--amp-soft);
 /* Rediseño */
 .carrito-resumen { border-top-color: var(--amp-night); }
 .carrito-card-badge { border-color: rgba(227,201,165,.5); color: var(--amp-copper-soft); }
+
+/* Carrito centrado en el producto */
+.carrito-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 16px; }
+.carrito-card { min-height: 220px; flex-direction: row; border: 1px solid var(--amp-border); border-radius: 12px; background: var(--amp-surface); box-shadow: none; transition: border-color .14s ease, background-color .14s ease; }
+.carrito-card:hover { border-color: var(--amp-border-strong); box-shadow: none; transform: none; }
+.carrito-card-bg { position: relative; inset: auto; flex: 0 0 168px; min-height: 188px; margin: 16px 0 16px 16px; border-radius: 8px; background-color: var(--amp-surface-2); background-repeat: no-repeat; background-size: contain; transition: none; }
+.carrito-card:hover .carrito-card-bg { transform: none; }
+.carrito-card-overlay { display: none; }
+.carrito-card-content { gap: 8px; padding: 16px; color: var(--amp-text); }
+.carrito-card-badge { margin: 0; padding: 0; border: 0; border-radius: 0; color: var(--amp-muted); background: none; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.carrito-card-nombre { margin: 0; color: var(--amp-text); font: 500 17px/1.35 var(--amp-body-font); }
+.carrito-card-info { gap: 8px; }
+.carrito-card-info-item { gap: 6px; color: var(--amp-text-secondary); font-size: 13px; }
+.carrito-card-info-item svg { width: 16px; height: 16px; }
+.carrito-card-footer { gap: 12px; padding-top: 12px; border-top: 1px solid var(--amp-border); }
+.carrito-card-precio { color: var(--amp-text); font: 600 18px/1.2 var(--amp-body-font); font-variant-numeric: tabular-nums; }
+.carrito-card-detalle { margin-top: 4px; color: var(--amp-muted); font-size: 12px; }
+.carrito-card-remove { min-height: 36px; border: 1px solid var(--amp-border); border-radius: 7px; color: var(--amp-text-secondary); background: var(--amp-surface); font: 500 13px var(--amp-body-font); transition: background-color .14s ease, color .14s ease; }
+.carrito-card-remove:hover { color: var(--amp-danger); background: var(--amp-danger-bg); transform: none; }
+.carrito-resumen { gap: 20px; padding: 20px 24px; border: 1px solid var(--amp-border); border-top: 2px solid var(--amp-primary); border-radius: 12px; background: var(--amp-surface); box-shadow: none; }
+.carrito-resumen-total-label { color: var(--amp-muted); font-size: 13px; }
+.carrito-resumen-total { color: var(--amp-text); font: 500 26px/1.2 var(--amp-body-font); font-variant-numeric: tabular-nums; }
+.carrito-resumen-count { color: var(--amp-muted); font-size: 13px; }
+.carrito-vacio { padding: 56px 24px; border: 1px solid var(--amp-border); border-radius: 14px; background: var(--amp-surface); box-shadow: none; }
+.carrito-vacio-icon { width: 52px; height: 52px; border-radius: 10px; color: var(--amp-muted); background: var(--amp-surface-2); }
+.carrito-vacio h2 { margin: 0 0 8px; color: var(--amp-text); font: 500 22px/1.3 var(--amp-heading-font); }
+.carrito-vacio p { color: var(--amp-text-secondary); font-size: 14px; }
+@media (max-width: 700px) {
+  .carrito-card { min-height: 0; }
+  .carrito-card-bg { flex-basis: 132px; min-height: 148px; }
+  .carrito-resumen { align-items: flex-start; text-align: left; }
+  .carrito-resumen-actions { justify-content: flex-start; }
+}
+@media (max-width: 480px) {
+  .carrito-card { flex-direction: column; }
+  .carrito-card-bg { flex-basis: auto; min-height: 190px; margin: 12px 12px 0; }
+  .carrito-card-content { padding: 12px; }
+  .carrito-resumen { align-items: stretch; text-align: left; }
+  .carrito-resumen-actions { flex-direction: column; align-items: stretch; }
+}

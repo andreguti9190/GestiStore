@@ -3,102 +3,119 @@
 {% block title %} - Inicio{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="{% static 'tienda/css/productos.css' %}?v=20261026-9">
+<link rel="stylesheet" href="{% static 'tienda/css/productos.css' %}?v=20261110-2">
+<link rel="stylesheet" href="{% static 'tienda/css/inicio.css' %}?v=20261110-4">
 
-<div class="inicio-hero">
-  <img class="inicio-hero-plug" src="{% static 'tienda/images/ampere-isotipo-cobre.png' %}" alt="" aria-hidden="true">
-  <div class="inicio-hero-content">
-    <span class="inicio-hero-badge">Bienvenido/a, {{ user.username }}</span>
-    <h1>Componentes que mantienen todo conectado</h1>
-    <p>Explorá el catálogo, sumá productos al carrito y finalizá tu compra en minutos.</p>
-    <div class="inicio-hero-actions">
-      <a href="{% url 'lista_productos' %}" class="btn btn-primary">Ver catálogo</a>
-      {% if user.perfil.rol == 'admin' %}
-      <a href="{% url 'crear_producto' %}" class="btn btn-secondary">Agregar producto</a>
-      {% endif %}
-    </div>
-  </div>
-</div>
+<main class="inicio-page">
+  <section class="inicio-hero" aria-labelledby="inicio-titulo">
+    <div class="inicio-hero-copy">
+      <h1 id="inicio-titulo">Encontrá rápido la tecnología que necesitás.</h1>
+      <p>Buscá por nombre, explorá por categoría y revisá precio y disponibilidad antes de elegir.</p>
 
-<div class="inicio-stats">
-  <div class="inicio-stat">
-    <strong>{{ total_productos }}</strong>
-    <span>Productos disponibles</span>
-  </div>
-  <div class="inicio-stat">
-    <strong>{{ categorias|length }}</strong>
-    <span>Categorías</span>
-  </div>
-</div>
+      <form class="inicio-search" role="search" method="get" action="{% url 'lista_productos' %}">
+        <label class="sr-only" for="inicio-busqueda">Buscar productos</label>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7.5"/><path d="m16.5 16.5 4 4"/></svg>
+        <input id="inicio-busqueda" name="q" type="search" placeholder="Buscar un producto" autocomplete="off">
+        <button type="submit">Buscar</button>
+      </form>
 
-{% if destacados %}
-<h2 class="inicio-seccion-titulo">Productos recientes</h2>
-<div class="productos-grid">
-  {% for p in destacados %}
-  <a href="{% url 'detalle_producto' p.pk %}" class="producto-card">
-    <div class="producto-card-img">
-      {% if p.imagen %}
-      <img src="{{ p.imagen.url }}" alt="{{ p.nombre }}">
-      {% else %}
-      <span class="producto-card-sin-imagen">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-      </span>
-      {% endif %}
-      {% if not p.activo %}<span class="producto-card-soldout">No disponible</span>{% endif %}
-    </div>
-    <div class="producto-card-body">
-      <span class="producto-card-categoria">{{ p.get_categoria_display }}</span>
-      <h3 class="producto-card-nombre">{{ p.nombre }}</h3>
-      <div class="producto-card-precio">${{ p.precio }}</div>
-      <div class="producto-card-stock">
-        {% if p.stock > 10 %}
-        <span class="stock-ok">En stock</span>
-        {% elif p.stock > 0 %}
-        <span class="stock-bajo">Quedan {{ p.stock }}</span>
-        {% else %}
-        <span class="stock-agotado">Sin stock</span>
+      <div class="inicio-hero-links">
+        <a class="inicio-catalog-link" href="{% url 'lista_productos' %}">Ver todo el catálogo <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3.5 10h12m-5-5 5 5-5 5"/></svg></a>
+        {% if user.is_authenticated and user.perfil.rol == 'admin' %}
+        <a class="inicio-admin-link" href="{% url 'crear_producto' %}">Agregar producto</a>
         {% endif %}
       </div>
+      <p class="inicio-hero-note"><span aria-hidden="true"></span> Precios en ARS y disponibilidad a la vista</p>
     </div>
-  </a>
-  {% endfor %}
-</div>
-{% endif %}
 
-<div class="inicio-categorias">
-  <h2 class="inicio-seccion-titulo">Categorías</h2>
-  <div class="inicio-categorias-grid">
-    {% for value, label in categorias %}
-    <a href="{% url 'lista_productos' %}?categoria={{ value }}" class="categoria-card">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        {% if value == 'informatica' %}
-        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-        {% elif value == 'componente_pc' %}
-        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
-        {% elif value == 'perifericos_gaming' %}
-        <line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 00-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 003 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 019.828 16h4.344a2 2 0 011.414.586L17 18c.5.5 1 1 2 1a3 3 0 003-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0017.32 5z"/>
-        {% elif value == 'redes_conectividad' %}
-        <path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
-        {% elif value == 'celulares_accesorios' %}
-        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
-        {% elif value == 'cables_adaptadores' %}
-        <path d="M18 8V5a2 2 0 00-2-2H8a2 2 0 00-2 2v3"/><path d="M6 12v7a2 2 0 002 2h8a2 2 0 002-2v-7"/><line x1="2" y1="10" x2="6" y2="10"/><line x1="18" y1="10" x2="22" y2="10"/>
-        {% elif value == 'electronica_desarrollo' %}
-        <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 15h6"/>
-        {% elif value == 'seguridad_domotica' %}
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>
-        {% elif value == 'lectores_tarjetas' %}
-        <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
-        {% elif value == 'otros' %}
-        <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+    {% if destacado %}
+    <a class="inicio-featured" href="{% url 'detalle_producto' destacado.pk %}" aria-label="Ver {{ destacado.nombre }}">
+      <div class="inicio-featured-media">
+        {% if destacado.imagen %}
+        <img src="{{ destacado.imagen.url }}" alt="{{ destacado.nombre }}">
         {% else %}
-        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        <span class="inicio-featured-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg></span>
         {% endif %}
-      </svg>
-      <span>{{ label }}</span>
+      </div>
+      <div class="inicio-featured-data">
+        <div class="inicio-featured-topline"><span>Ingreso reciente</span><span class="inicio-stock {% if destacado.stock > 10 %}stock-ok{% elif destacado.stock > 0 %}stock-bajo{% else %}stock-agotado{% endif %}">{% if destacado.stock > 10 %}En stock{% elif destacado.stock > 0 %}Quedan {{ destacado.stock }}{% else %}Sin stock{% endif %}</span></div>
+        <span class="inicio-featured-category">{{ destacado.get_categoria_display }}</span>
+        <h2>{{ destacado.nombre }}</h2>
+        <p>ARS <strong>${{ destacado.precio }}</strong></p>
+      </div>
+      <svg class="inicio-featured-arrow" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5"/></svg>
     </a>
-    {% endfor %}
-  </div>
-</div>
+    {% else %}
+    <div class="inicio-featured inicio-featured-empty">
+      <svg aria-hidden="true" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="5" y="7" width="38" height="34" rx="3"/><path d="M12 16h22M12 23h16M12 30h10"/></svg>
+      <p>El catálogo se está preparando.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="inicio-categorias" aria-labelledby="inicio-categorias-titulo">
+    <div class="inicio-section-heading">
+      <h2 id="inicio-categorias-titulo">Explorá por categoría</h2>
+      <a href="{% url 'lista_productos' %}">Ver catálogo <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3.5 10h12m-5-5 5 5-5 5"/></svg></a>
+    </div>
+    <nav class="inicio-category-index" aria-label="Categorías de productos">
+      {% for value, label in categorias %}
+      <a href="{% url 'lista_productos' %}?categoria={{ value }}" class="inicio-category-link">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+          {% if value == 'informatica' %}
+          <rect x="2.5" y="3.5" width="19" height="13" rx="1.5"/><path d="M8 21h8m-4-4.5V21"/>
+          {% elif value == 'componente_pc' %}
+          <rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3m6-3v3m-6 14v3m6-3v3M2 9h3m14 0h3M2 15h3m14 0h3"/>
+          {% elif value == 'perifericos_gaming' %}
+          <path d="M7 7h10a4 4 0 0 1 3.9 3.2l1 4.8a2.5 2.5 0 0 1-4.3 2.1l-1.7-1.8H8.1l-1.7 1.8a2.5 2.5 0 0 1-4.3-2.1l1-4.8A4 4 0 0 1 7 7Z"/><path d="M7 10v4m-2-2h4m8-1h.01M18 13h.01"/>
+          {% elif value == 'redes_conectividad' %}
+          <path d="M5 9a11 11 0 0 1 14 0M8 12a6.5 6.5 0 0 1 8 0m-5 4h.01M2 6a16 16 0 0 1 20 0"/>
+          {% elif value == 'celulares_accesorios' %}
+          <rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18.5h2"/>
+          {% elif value == 'cables_adaptadores' %}
+          <path d="M7 3v4m10-4v4M5 7h14v4a7 7 0 0 1-7 7h0a7 7 0 0 1-7-7V7Zm7 11v3"/>
+          {% elif value == 'electronica_desarrollo' %}
+          <rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h.01M15 9h.01M9 15h6"/>
+          {% elif value == 'seguridad_domotica' %}
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>
+          {% elif value == 'lectores_tarjetas' %}
+          <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20m-15 4h4"/>
+          {% else %}
+          <circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+          {% endif %}
+        </svg>
+        <span>{{ label }}</span>
+        <svg class="inicio-category-arrow" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M5 10h10m-4-4 4 4-4 4"/></svg>
+      </a>
+      {% endfor %}
+    </nav>
+  </section>
+
+  {% if destacados %}
+  <section class="inicio-products" aria-labelledby="inicio-productos-titulo">
+    <div class="inicio-section-heading">
+      <h2 id="inicio-productos-titulo">Últimos ingresos</h2>
+      <a href="{% url 'lista_productos' %}">Ver todo el catálogo <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3.5 10h12m-5-5 5 5-5 5"/></svg></a>
+    </div>
+    <div class="productos-grid inicio-productos-grid">
+      {% for p in destacados %}
+      <a href="{% url 'detalle_producto' p.pk %}" class="producto-card">
+        <div class="producto-card-img">
+          {% if p.imagen %}<img src="{{ p.imagen.url }}" alt="{{ p.nombre }}">
+          {% else %}<span class="producto-card-sin-imagen"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>{% endif %}
+          {% if not p.activo %}<span class="producto-card-soldout">No disponible</span>{% endif %}
+        </div>
+        <div class="producto-card-body">
+          <span class="producto-card-categoria">{{ p.get_categoria_display }}</span>
+          <h3 class="producto-card-nombre">{{ p.nombre }}</h3>
+          <div class="producto-card-precio">ARS ${{ p.precio }}</div>
+          <div class="producto-card-stock">{% if p.stock > 10 %}<span class="stock-ok">En stock</span>{% elif p.stock > 0 %}<span class="stock-bajo">Quedan {{ p.stock }}</span>{% else %}<span class="stock-agotado">Sin stock</span>{% endif %}</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
 
 {% endblock %}
