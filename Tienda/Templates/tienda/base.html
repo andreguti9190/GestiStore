@@ -105,12 +105,18 @@
 </div>
 
 {% if request.resolver_match.url_name != 'login' and request.resolver_match.url_name != 'registro' and request.resolver_match.url_name != 'verificar_registro' and request.resolver_match.url_name != 'verificar_2fa' %}
-<aside class="store-assistant" id="store-assistant" data-url="{% url 'asistente_consulta' %}">
+<aside class="store-assistant" id="store-assistant" data-url="{% url 'asistente_consulta' %}" data-state-scope="{% if user.is_authenticated %}user-{{ user.pk }}{% else %}guest{% endif %}">
   <button type="button" class="assistant-launcher" id="assistant-launcher" aria-expanded="false" aria-controls="assistant-panel"><span>✦</span><span class="assistant-launcher-label">Ayuda</span></button>
   <section class="assistant-panel" id="assistant-panel" hidden aria-label="Asistente de AmpereStore">
-    <header><div><strong>Asistente Ampere</strong><small>Respuestas automáticas · sin IA</small></div><button type="button" id="assistant-close" aria-label="Cerrar asistente">×</button></header>
-    <div class="assistant-messages" id="assistant-messages" aria-live="polite"><p class="assistant-bubble bot">Hola. Puedo responder consultas frecuentes usando la información de la tienda.</p></div>
+    <header><div><strong>Asistente Ampere</strong><small>Ayuda inteligente para tu compra</small></div><button type="button" id="assistant-close" aria-label="Cerrar asistente">×</button></header>
+    <div class="assistant-messages" id="assistant-messages" aria-live="polite"><p class="assistant-bubble bot">Hola. Preguntame por productos, pagos, envíos o tu pedido.</p></div>
     <form id="assistant-form">{% csrf_token %}
+      <label class="assistant-compose-label" for="assistant-message">Escribí tu consulta</label>
+      <div class="assistant-compose">
+        <input id="assistant-message" name="message" type="text" maxlength="1000" autocomplete="off" placeholder="¿En qué te puedo ayudar?">
+        <button type="submit" id="assistant-send" aria-label="Enviar consulta">Enviar</button>
+      </div>
+      <small class="assistant-privacy">La consulta se procesa con OpenAI. No compartas contraseñas, tarjetas ni códigos.</small>
       <p>Elegí una consulta:</p>
       <div class="assistant-options">
         <button type="submit" name="intent" value="mi_pedido">Mi último pedido</button>
@@ -122,7 +128,7 @@
     </form>
   </section>
 </aside>
-<script src="{% static 'tienda/js/asistente.js' %}"></script>
+<script src="{% static 'tienda/js/asistente.js' %}?v=20261111-5"></script>
 {% endif %}
 
 <footer class="footer">

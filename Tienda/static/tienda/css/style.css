@@ -761,6 +761,14 @@ button, input, select, textarea { font: inherit; }
 .assistant-bubble.error { color: var(--amp-danger); }
 #assistant-form { padding: 13px 14px 15px; }
 #assistant-form > p { margin: 0 0 9px; color: var(--amp-muted); font-size: .73rem; }
+.assistant-compose-label { display: block; margin: 0 0 6px; color: var(--amp-text-secondary); font-size: .72rem; font-weight: 600; }
+.assistant-compose { display: flex; gap: 7px; margin-bottom: 12px; }
+.assistant-compose input { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--amp-border); border-radius: 10px; background: var(--amp-surface); color: var(--amp-text); font-size: .78rem; }
+.assistant-compose input:focus { border-color: var(--amp-primary); box-shadow: var(--amp-ring); outline: 0; }
+.assistant-compose button { flex: 0 0 auto; padding: 8px 11px; border: 0; border-radius: 10px; background: var(--amp-action); color: #fff; cursor: pointer; font-size: .75rem; font-weight: 700; }
+.assistant-compose button:hover { filter: brightness(.94); }
+.assistant-panel[aria-busy="true"] .assistant-compose button { opacity: .65; cursor: wait; }
+.assistant-privacy { display: block; margin: -5px 0 11px; color: var(--amp-text-secondary); font-size: .64rem; line-height: 1.4; }
 .assistant-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .assistant-options button { padding: 7px 9px; border: 1px solid var(--amp-border); border-radius: 999px; color: var(--amp-indigo); background: var(--amp-white); cursor: pointer; font-size: .72rem; }
 .assistant-options button:hover { border-color: var(--amp-primary); background: var(--amp-ice); }

@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-3">
   <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261111-6">
 </head>
-<body data-websocket-url="/ws/ventas/" data-live-revision="{{ dashboard_revision }}">
+<body data-websocket-url="/ws/ventas/" data-revision-url="{% url 'dashboard_revision' %}" data-live-revision="{{ dashboard_revision }}">
 {% include 'tienda/partials/site_header.html' %}
 <div class="dashboard-shell">
   <main class="seller-main">

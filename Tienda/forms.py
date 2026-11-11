@@ -14,6 +14,12 @@ class ProductoForm(forms.ModelForm):
             'descripcion': forms.Textarea(attrs={'rows': 4}),
         }
 
+    def clean_imagen(self):
+        image = self.cleaned_data.get('imagen')
+        if image and getattr(image, 'size', 0) > 4 * 1024 * 1024:
+            raise forms.ValidationError('La imagen no puede superar los 4 MB.')
+        return image
+
 
 class RegistroForm(UserCreationForm):
     email = forms.EmailField(required=True)

@@ -5,5 +5,10 @@ __pycache__/
 *.log
 .certificados/
 .runtime/
+.vercel/
+.env.local
+.env.vercel
+staticfiles/
+deployment-data.json
 .impeccable-runtime/
 

@@ -3,9 +3,10 @@ import json
 import hashlib
 import hmac
 import time
+from contextlib import redirect_stdout
 from datetime import timedelta
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -25,7 +26,7 @@ from cryptography import x509
 from webauthn.helpers import bytes_to_base64url
 
 from scripts.generar_certificado_https import generate_certificate
-from scripts.iniciar_facil import _tunnel_url
+from scripts.iniciar_facil import _generate_public_qr, _tunnel_url
 from .models import (
     CredencialFacial, CredencialPasskey, DetalleVenta, PagoSandbox,
     Perfil, Producto, SolicitudDevolucion, Venta,
@@ -791,6 +792,19 @@ class CertificadoHttpsTests(TestCase):
 
 
 class InicioFacilTests(TestCase):
+    def test_genera_qr_png_con_el_enlace_publico(self):
+        with TemporaryDirectory() as directory:
+            with (
+                patch('scripts.iniciar_facil.RUNTIME_DIR', Path(directory)),
+                redirect_stdout(StringIO()),
+            ):
+                qr_path = _generate_public_qr(
+                    'https://ampere-demo.trycloudflare.com'
+                )
+
+            self.assertEqual(qr_path.name, 'amperestore-qr.png')
+            self.assertEqual(qr_path.read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
+
     def test_extrae_solamente_un_enlace_https_de_cloudflare(self):
         output = (
             'INF Your quick Tunnel has been created! '
@@ -1491,6 +1505,19 @@ class DashboardVendedorTests(TestCase):
 
         self.assertEqual(response.context['page_obj'].paginator.count, 1)
 
+    def test_revision_del_panel_es_privada_y_cambia_al_actualizar(self):
+        first = self.client.get(reverse('dashboard_revision'))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first['Cache-Control'], 'no-store')
+
+        self.venta.estado_envio = 'enviado'
+        self.venta.save(update_fields=['estado_envio'])
+        second = self.client.get(reverse('dashboard_revision'))
+
+        self.assertNotEqual(first.json()['revision'], second.json()['revision'])
+        self.client.force_login(self.cliente)
+        self.assertEqual(self.client.get(reverse('dashboard_revision')).status_code, 403)
+
     @patch('Tienda.views.publish_dashboard_event')
     def test_actualiza_estado_de_pago_y_envio(self, publish):
         with self.captureOnCommitCallbacks(execute=True):
@@ -1628,6 +1655,43 @@ class AsistenteGuiadoTests(TestCase):
         response = self.client.post(reverse('asistente_consulta'), {'intent': 'inventado'})
 
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(
+        OPENAI_API_KEY='test-key', OPENAI_CHAT_MODEL='gpt-6-luna',
+        OPENAI_INCLUDE_STORE_CONTEXT=True,
+    )
+    def test_consulta_libre_usa_responses_api_sin_guardar_respuesta(self):
+        api_result = BytesIO(json.dumps({
+            'output': [{
+                'type': 'message',
+                'content': [{'type': 'output_text', 'text': 'Tenemos mouse con stock.'}],
+            }],
+        }).encode())
+        with patch('Tienda.views.urlopen', return_value=api_result) as mocked_urlopen:
+            response = self.client.post(reverse('asistente_consulta'), {
+                'message': '¿Tienen mouse?',
+                'history': json.dumps([{'role': 'user', 'content': 'Hola'}]),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['answer'], 'Tenemos mouse con stock.')
+        api_request = mocked_urlopen.call_args.args[0]
+        payload = json.loads(api_request.data.decode())
+        self.assertEqual(payload['model'], 'gpt-6-luna')
+        self.assertFalse(payload['store'])
+        self.assertEqual(payload['input'][-1]['content'], '¿Tienen mouse?')
+        self.assertIn('Mouse', payload['instructions'])
+        self.assertIn('Respondé siempre en texto plano', payload['instructions'])
+        self.assertIn('no se comparten con el asistente externo', payload['instructions'])
+        self.assertNotIn('Último pedido', payload['instructions'])
+
+    @override_settings(OPENAI_API_KEY='')
+    def test_consulta_libre_exige_configuracion_server_side(self):
+        response = self.client.post(reverse('asistente_consulta'), {
+            'message': 'Recomendame un producto',
+        })
+
+        self.assertEqual(response.status_code, 503)
 
 
 class DashboardRealtimeTests(TestCase):

@@ -3,6 +3,8 @@
 import argparse
 import asyncio
 import hashlib
+import http.client
+import importlib.util
 import os
 import platform
 import queue
@@ -21,6 +23,15 @@ from urllib.request import Request, urlopen
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 RUNTIME_DIR = PROJECT_DIR / ".runtime"
+LOCAL_PACKAGES_DIR = RUNTIME_DIR / "python-packages"
+REQUIRED_IMPORTS = {
+    "Django": "django",
+    "Pillow": "PIL",
+    "qrcode": "qrcode",
+    "webauthn": "webauthn",
+    "uvicorn": "uvicorn",
+    "websockets": "websockets",
+}
 TUNNEL_URL_PATTERN = re.compile(
     r"https://[a-z0-9-]+\.trycloudflare\.com",
     re.IGNORECASE,
@@ -31,6 +42,123 @@ RESERVED_TRYCLOUDFLARE_HOSTS = {
 }
 CLOUDFLARED_VERSION = "2026.10.1"
 CLOUDFLARED_SHA256_AMD64 = "4d2490e74082c5d48dbfedaf92576fa5bd1702379ab88eb7faa0cfbe8dc891b6"
+
+
+def _normalized_package_name(value):
+    return re.sub(r"[-_.]+", "-", value).lower()
+
+
+def _project_requirements():
+    """Devuelve las versiones declaradas sin duplicarlas en el iniciador."""
+    requirements = {}
+    requirements_file = PROJECT_DIR / "requirements.txt"
+    for raw_line in requirements_file.read_text(encoding="utf-8").splitlines():
+        requirement = raw_line.split("#", 1)[0].strip()
+        if not requirement:
+            continue
+        package_name = re.split(r"[\s<>=!~;\[]", requirement, maxsplit=1)[0]
+        requirements[_normalized_package_name(package_name)] = requirement
+    return requirements
+
+
+def _ensure_python_dependencies():
+    """Instala localmente lo que falte para que el inicio sea realmente de un clic."""
+    RUNTIME_DIR.mkdir(exist_ok=True)
+    LOCAL_PACKAGES_DIR.mkdir(exist_ok=True)
+    local_packages = str(LOCAL_PACKAGES_DIR)
+    if local_packages not in sys.path:
+        sys.path.insert(0, local_packages)
+
+    importlib.invalidate_caches()
+    missing_distributions = [
+        distribution
+        for distribution, module in REQUIRED_IMPORTS.items()
+        if importlib.util.find_spec(module) is None
+    ]
+    if not missing_distributions:
+        return
+
+    declared_requirements = _project_requirements()
+    missing_requirements = [
+        declared_requirements.get(_normalized_package_name(distribution), distribution)
+        for distribution in missing_distributions
+    ]
+    print("Preparando los componentes necesarios por primera vez…")
+    print("Faltan: " + ", ".join(missing_distributions))
+    command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-input",
+        "--upgrade",
+        "--target",
+        local_packages,
+        *missing_requirements,
+    ]
+    result = subprocess.run(
+        command,
+        cwd=PROJECT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        details = "\n".join(result.stdout.splitlines()[-12:])
+        raise RuntimeError(
+            "No se pudieron preparar las dependencias de Python. "
+            "Revisá la conexión a Internet e intentá nuevamente.\n" + details
+        )
+
+    importlib.invalidate_caches()
+    still_missing = [
+        distribution
+        for distribution, module in REQUIRED_IMPORTS.items()
+        if importlib.util.find_spec(module) is None
+    ]
+    if still_missing:
+        raise RuntimeError(
+            "La instalación terminó, pero siguen faltando: " + ", ".join(still_missing)
+        )
+
+
+def _apply_database_migrations():
+    """Mantiene el esquema SQLite alineado con la versión de la aplicación."""
+    environment = os.environ.copy()
+    python_paths = [str(LOCAL_PACKAGES_DIR), str(PROJECT_DIR)]
+    if environment.get("PYTHONPATH"):
+        python_paths.append(environment["PYTHONPATH"])
+    environment["PYTHONPATH"] = os.pathsep.join(python_paths)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    print("Comprobando la base de datos…")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_DIR / "manage.py"),
+            "migrate",
+            "--noinput",
+            "--verbosity",
+            "0",
+        ],
+        cwd=PROJECT_DIR,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        details = "\n".join(result.stdout.splitlines()[-20:])
+        raise RuntimeError(
+            "No se pudo actualizar la base de datos de AmpereStore.\n" + details
+        )
 
 
 def _available_local_port():
@@ -169,6 +297,63 @@ def _copy_to_clipboard(value):
     return result.returncode == 0
 
 
+def _generate_public_qr(public_url):
+    """Crea un QR compartible y devuelve la ruta de su imagen PNG."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_M
+
+    RUNTIME_DIR.mkdir(exist_ok=True)
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(public_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#0b1220", back_color="white")
+    qr_path = RUNTIME_DIR / "amperestore-qr.png"
+    image.save(qr_path)
+
+    print("\nEscaneá este código QR con la cámara del celular:\n")
+    try:
+        qr.print_ascii(out=sys.stdout, tty=False, invert=True)
+    except (OSError, UnicodeError):
+        print("El QR no pudo dibujarse en esta consola, pero la imagen fue creada.")
+    print(f"\nImagen del QR: {qr_path}\n")
+    return qr_path
+
+
+def _open_browser_when_server_is_ready(local_port, public_url):
+    """Abre el túnel solo después de recibir una página de login válida."""
+    public_host = urlparse(public_url).hostname
+    if not public_host:
+        return
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        connection = http.client.HTTPConnection("127.0.0.1", local_port, timeout=1)
+        try:
+            connection.request(
+                "GET",
+                "/login/?next=/",
+                headers={
+                    "Host": public_host,
+                    "X-Forwarded-Proto": "https",
+                    "Cache-Control": "no-cache",
+                },
+            )
+            response = connection.getresponse()
+            response.read()
+            if response.status == 200:
+                webbrowser.open(public_url)
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        finally:
+            connection.close()
+        time.sleep(0.2)
+
+
 def _configure_django(public_url):
     hostname = urlparse(public_url).hostname
     if not hostname:
@@ -183,6 +368,7 @@ def _configure_django(public_url):
     os.environ["DJANGO_SECURE_COOKIES"] = "true"
     os.environ["SERVE_STATIC_FILES"] = "true"
     os.environ["SERVE_MEDIA_FILES"] = "true"
+    os.environ["AMPERESTORE_ERROR_LOG"] = str(RUNTIME_DIR / "amperestore-errors.log")
 
 
 def _stop_process(process):
@@ -204,6 +390,8 @@ def main():
 
     os.chdir(PROJECT_DIR)
     sys.path.insert(0, str(PROJECT_DIR))
+    _ensure_python_dependencies()
+    _apply_database_migrations()
     local_port = args.local_port or _available_local_port()
 
     print("\nIniciando AmpereStore…")
@@ -222,6 +410,7 @@ def main():
     print("AMPERESTORE ESTÁ LISTO")
     print("=" * 68)
     print(f"\nEnlace para PC o celular:\n{public_url}\n")
+    qr_path = _generate_public_qr(public_url)
     if not args.no_clipboard and _copy_to_clipboard(public_url):
         print("El enlace quedó copiado. Podés pegarlo y compartirlo.")
     print("Para usarlo en un celular, enviá o pegá allí este mismo enlace.")
@@ -230,9 +419,7 @@ def main():
     print("Para cerrar AmpereStore presioná Ctrl+C.\n")
 
     if not args.no_browser:
-        timer = threading.Timer(1.5, webbrowser.open, args=(public_url,))
-        timer.daemon = True
-        timer.start()
+        webbrowser.open(qr_path.as_uri())
 
     closing = threading.Event()
     try:
@@ -248,6 +435,14 @@ def main():
             log_level="warning",
         )
         server = uvicorn.Server(config)
+
+        if not args.no_browser:
+            threading.Thread(
+                target=_open_browser_when_server_is_ready,
+                args=(local_port, public_url),
+                name="browser-open-when-ready",
+                daemon=True,
+            ).start()
 
         def stop_if_tunnel_closes():
             tunnel.wait()

@@ -101,7 +101,9 @@ class Producto(models.Model):
     costo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stock = models.PositiveIntegerField(default=0)
     categoria = models.CharField(max_length=30, choices=CATEGORIA_CHOICES, default='otros')
-    imagen = models.ImageField(upload_to='productos/', blank=True, null=True)
+    imagen = models.ImageField(
+        upload_to='productos/', max_length=500, blank=True, null=True,
+    )
     peso_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True,
                                   help_text="Peso en kilogramos")
     activo = models.BooleanField(default=True)
@@ -164,10 +166,13 @@ class Venta(models.Model):
     transportista = models.CharField(max_length=80, blank=True)
     tracking = models.CharField(max_length=80, blank=True)
     codigo = models.CharField(max_length=20, unique=True, blank=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
         if not self.codigo:
             self.codigo = f"GS-{str(uuid.uuid4())[:8].upper()}"
+        if kwargs.get('update_fields') is not None:
+            kwargs['update_fields'] = set(kwargs['update_fields']) | {'actualizada_en'}
         super().save(*args, **kwargs)
 
     def __str__(self):
