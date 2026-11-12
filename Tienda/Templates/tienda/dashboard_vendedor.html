@@ -19,7 +19,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="{% static 'tienda/css/style.css' %}?v=20261110-3">
-  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261111-6">
+  <link rel="stylesheet" href="{% static 'tienda/css/dashboard.css' %}?v=20261111-7">
 </head>
 <body data-websocket-url="/ws/ventas/" data-revision-url="{% url 'dashboard_revision' %}" data-live-revision="{{ dashboard_revision }}">
 {% include 'tienda/partials/site_header.html' %}
@@ -32,16 +32,22 @@
         <div><span class="eyebrow">Resumen del negocio</span><h1>Resumen de la tienda</h1><p>Este es el resumen de tu tienda. Los datos se actualizan con cada venta.</p></div>
         <div class="header-controls">
           <div class="store-selector"><span class="store-avatar">A</span><div><small>Tienda activa</small><strong>AmpereStore</strong></div><span>⌄</span></div>
-          <form method="get" class="period-control" id="period-form">
-            {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
-            <select name="periodo" id="period-select" aria-label="Seleccionar período">
-              <option value="hoy"{% if period == 'hoy' %} selected{% endif %}>Hoy</option><option value="7d"{% if period == '7d' %} selected{% endif %}>Últimos 7 días</option><option value="30d"{% if period == '30d' %} selected{% endif %}>Últimos 30 días</option><option value="90d"{% if period == '90d' %} selected{% endif %}>Últimos 90 días</option><option value="todo"{% if period == 'todo' %} selected{% endif %}>Todo el historial</option><option value="personalizado"{% if period == 'personalizado' %} selected{% endif %}>Rango personalizado</option>
-            </select>
-            <div class="custom-dates"{% if period != 'personalizado' %} hidden{% endif %}><input type="date" name="desde" value="{{ start_date|date:'Y-m-d' }}" aria-label="Desde"><input type="date" name="hasta" value="{{ end_date|date:'Y-m-d' }}" aria-label="Hasta"><button type="submit">Aplicar</button></div>
-          </form>
           <a href="{% url 'crear_producto' %}" class="primary-button">Agregar producto</a>
         </div>
       </section>
+
+      <form method="get" class="period-control period-toolbar" id="period-form">
+        {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+        <label class="period-select-label" for="period-select">Período</label>
+        <select name="periodo" id="period-select" aria-label="Seleccionar período">
+          <option value="hoy"{% if period == 'hoy' %} selected{% endif %}>Hoy</option><option value="7d"{% if period == '7d' %} selected{% endif %}>Últimos 7 días</option><option value="30d"{% if period == '30d' %} selected{% endif %}>Últimos 30 días</option><option value="90d"{% if period == '90d' %} selected{% endif %}>Últimos 90 días</option><option value="todo"{% if period == 'todo' %} selected{% endif %}>Todo el historial</option><option value="personalizado"{% if period == 'personalizado' %} selected{% endif %}>Rango personalizado</option>
+        </select>
+        <div class="custom-dates"{% if period != 'personalizado' %} hidden{% endif %}>
+          <label>Desde<input type="date" name="desde" value="{{ start_date|date:'Y-m-d' }}"></label>
+          <label>Hasta<input type="date" name="hasta" value="{{ end_date|date:'Y-m-d' }}"></label>
+          <button type="submit">Aplicar período</button>
+        </div>
+      </form>
 
       <div class="data-notice"><span>●</span> Datos reales de la base local · Período: {{ start_date|date:'d M' }} — {{ end_date|date:'d M Y' }}{% if has_estimated_costs %} · Las ganancias usan un costo estimado del 70% cuando falta ese dato{% endif %}<span class="live-sync" id="live-sync"><i></i> Actualización automática</span></div>
 

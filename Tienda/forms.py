@@ -83,6 +83,7 @@ class RegistroForm(UserCreationForm):
             kwargs['instance'] = pending_user
         super().__init__(*args, **kwargs)
         self.pending_user = pending_user
+        self.fields['fecha_nacimiento'].widget.attrs['max'] = timezone.localdate().isoformat()
 
     def clean_username(self):
         username = self.cleaned_data.get('username')
